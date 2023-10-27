@@ -11,6 +11,16 @@ pub enum BencodeValue<'a> {
     Dict(HashMap<&'a [u8], BencodeValue<'a>>),
 }
 
+impl<'a> TryFrom<&'a [u8]> for BencodeValue<'a> {
+    type Error = ();
+
+    fn try_from(value: &'a [u8]) -> Result<Self, Self::Error> {
+        combinator::all_consuming(parse_once)(value)
+            .map(|(_, v)| v)
+            .map_err(|_| ())
+    }
+}
+
 fn parse_once<'a>(b: &'a [u8]) -> IResult<&'a [u8], BencodeValue<'a>> {
     branch::alt((
         combinator::map(parse_bytes, |b| BencodeValue::Bytes(b)),
@@ -74,6 +84,8 @@ mod test {
             Ok((&[][..], "spam".as_bytes())),
             parse_bytes("4:spam".as_bytes()),
         );
+
+        assert_eq!(Ok((&[][..], &[][..])), parse_bytes("0:".as_bytes()),);
 
         assert_eq!(
             Ok(("m".as_bytes(), "spa".as_bytes())),
@@ -393,5 +405,27 @@ mod test {
             ))),
             parse_dict("di1ei2ee".as_bytes()),
         );
+    }
+
+    #[test]
+    fn try_into_bencode_value_test_success() {
+        assert_eq!(Ok(BencodeValue::Bytes(&[][..])), "0:".as_bytes().try_into());
+
+        assert_eq!(Ok(BencodeValue::Integer(0)), "i0e".as_bytes().try_into());
+
+        assert_eq!(
+            Ok(BencodeValue::List(Vec::new())),
+            "le".as_bytes().try_into(),
+        );
+
+        assert_eq!(
+            Ok(BencodeValue::Dict(HashMap::new())),
+            "de".as_bytes().try_into(),
+        );
+    }
+
+    #[test]
+    fn try_into_bencode_value_test_failure() {
+        assert_eq!(Err(()), BencodeValue::try_from("0:e".as_bytes()));
     }
 }
