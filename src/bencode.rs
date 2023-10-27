@@ -1,7 +1,9 @@
+use std::collections::HashMap;
+use std::iter;
+
 use nom::bytes::complete as bytes;
 use nom::IResult;
 use nom::{branch, character, combinator, multi, sequence};
-use std::collections::HashMap;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum BencodeValue<'a> {
@@ -18,6 +20,44 @@ impl<'a> TryFrom<&'a [u8]> for BencodeValue<'a> {
         combinator::all_consuming(parse_once)(value)
             .map(|(_, v)| v)
             .map_err(|_| ())
+    }
+}
+
+impl From<BencodeValue<'_>> for Vec<u8> {
+    fn from(input: BencodeValue<'_>) -> Self {
+        match input {
+            BencodeValue::Bytes(b) => iter::empty()
+                .chain(b.len().to_string().as_bytes())
+                .chain(":".as_bytes())
+                .chain(b.into_iter())
+                .copied()
+                .collect(),
+            BencodeValue::Integer(i) => iter::empty()
+                .chain("i".as_bytes())
+                .chain(i.to_string().as_bytes())
+                .chain("e".as_bytes())
+                .copied()
+                .collect(),
+            BencodeValue::List(l) => iter::empty()
+                .chain("l".as_bytes().into_iter().copied())
+                .chain(l.into_iter().flat_map(|v| Vec::<u8>::from(v).into_iter()))
+                .chain("e".as_bytes().into_iter().copied())
+                .collect(),
+            BencodeValue::Dict(d) => {
+                let mut key_values: Vec<(&[u8], BencodeValue<'_>)> = d.into_iter().collect();
+                key_values.sort_by_key(|(k, _)| *k);
+
+                iter::empty()
+                    .chain("d".as_bytes().into_iter().copied())
+                    .chain(key_values.into_iter().flat_map(|(k, v)| {
+                        iter::empty()
+                            .chain(Vec::<u8>::from(BencodeValue::Bytes(k)).into_iter())
+                            .chain(Vec::<u8>::from(v).into_iter())
+                    }))
+                    .chain("e".as_bytes().into_iter().copied())
+                    .collect()
+            }
+        }
     }
 }
 
@@ -252,10 +292,10 @@ mod test {
     fn parse_list_test_error() {
         assert_eq!(
             Err(nom::Err::Error(error::Error::new(
-                "5:blah".as_bytes(),
+                "5:spam".as_bytes(),
                 error::ErrorKind::Tag,
             ))),
-            parse_list("5:blah".as_bytes()),
+            parse_list("5:spam".as_bytes()),
         );
 
         assert_eq!(
@@ -365,10 +405,10 @@ mod test {
     fn parse_dict_test_error() {
         assert_eq!(
             Err(nom::Err::Error(error::Error::new(
-                "5:blah".as_bytes(),
+                "5:spam".as_bytes(),
                 error::ErrorKind::Tag,
             ))),
-            parse_dict("5:blah".as_bytes()),
+            parse_dict("5:spam".as_bytes()),
         );
 
         assert_eq!(
@@ -427,5 +467,55 @@ mod test {
     #[test]
     fn try_into_bencode_value_test_failure() {
         assert_eq!(Err(()), BencodeValue::try_from("0:e".as_bytes()));
+    }
+
+    #[test]
+    fn from_bencode_value_test() {
+        assert_eq!("i3e".as_bytes(), Vec::<u8>::from(BencodeValue::Integer(3)));
+
+        assert_eq!(
+            "i-3e".as_bytes(),
+            Vec::<u8>::from(BencodeValue::Integer(-3)),
+        );
+
+        assert_eq!(
+            "4:spam".as_bytes(),
+            Vec::<u8>::from(BencodeValue::Bytes("spam".as_bytes())),
+        );
+
+        assert_eq!(
+            "l4:spam4:eggse".as_bytes(),
+            Vec::<u8>::from(BencodeValue::List(vec![
+                BencodeValue::Bytes("spam".as_bytes()),
+                BencodeValue::Bytes("eggs".as_bytes()),
+            ])),
+        );
+
+        assert_eq!(
+            "d3:cow3:moo4:spam4:eggse".as_bytes(),
+            Vec::<u8>::from(BencodeValue::Dict(
+                [
+                    ("cow".as_bytes(), BencodeValue::Bytes("moo".as_bytes())),
+                    ("spam".as_bytes(), BencodeValue::Bytes("eggs".as_bytes())),
+                ]
+                .into_iter()
+                .collect()
+            )),
+        );
+
+        assert_eq!(
+            "d4:spaml1:a1:bee".as_bytes(),
+            Vec::<u8>::from(BencodeValue::Dict(
+                [(
+                    "spam".as_bytes(),
+                    BencodeValue::List(vec![
+                        BencodeValue::Bytes("a".as_bytes()),
+                        BencodeValue::Bytes("b".as_bytes()),
+                    ]),
+                )]
+                .into_iter()
+                .collect()
+            )),
+        );
     }
 }
