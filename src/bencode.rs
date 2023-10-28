@@ -71,23 +71,43 @@ fn parse_once<'a>(b: &'a [u8]) -> IResult<&'a [u8], BencodeValue<'a>> {
 }
 
 fn parse_bytes<'a>(b: &'a [u8]) -> IResult<&'a [u8], &'a [u8]> {
-    combinator::complete(multi::length_data(sequence::terminated(
+    combinator::complete(multi::length_data(sequence::delimited(
+        combinator::peek(combinator::not(sequence::pair(
+            bytes::tag("0"),
+            character::complete::one_of("0123456789"),
+        ))),
         character::complete::u64,
         bytes::tag(":"),
     )))(b)
 }
 
 fn parse_integer<'a>(b: &'a [u8]) -> IResult<&'a [u8], i128> {
-    sequence::delimited(
-        bytes::tag("i"),
-        sequence::preceded(
-            combinator::cut(combinator::peek(combinator::not(bytes::tag(
-                "-0".as_bytes(),
-            )))),
-            combinator::cut(character::complete::i128),
+    branch::alt((
+        combinator::map(bytes::tag("i0e"), |_| 0),
+        sequence::delimited(
+            bytes::tag("i"),
+            combinator::cut(branch::alt((
+                combinator::map_res(
+                    sequence::preceded(
+                        bytes::tag("-"),
+                        sequence::preceded(
+                            combinator::peek(character::complete::one_of("123456789")),
+                            character::complete::u128,
+                        ),
+                    ),
+                    |u| i128::try_from(u).map(|i| i * -1),
+                ),
+                combinator::map_res(
+                    sequence::preceded(
+                        combinator::peek(character::complete::one_of("123456789")),
+                        character::complete::u128,
+                    ),
+                    |u| i128::try_from(u),
+                ),
+            ))),
+            combinator::cut(bytes::tag("e")),
         ),
-        combinator::cut(bytes::tag("e")),
-    )(b)
+    ))(b)
 }
 
 fn parse_list<'a>(b: &'a [u8]) -> IResult<&'a [u8], Vec<BencodeValue<'a>>> {
@@ -182,6 +202,14 @@ mod test {
             ))),
             parse_bytes("5spam".as_bytes()),
         );
+
+        assert_eq!(
+            Err(nom::Err::Error(error::Error::new(
+                "04:spam".as_bytes(),
+                error::ErrorKind::Not,
+            ))),
+            parse_bytes("04:spam".as_bytes()),
+        );
     }
 
     #[test]
@@ -225,15 +253,31 @@ mod test {
         assert_eq!(
             Err(nom::Err::Failure(error::Error::new(
                 "-0e".as_bytes(),
-                error::ErrorKind::Not,
+                error::ErrorKind::OneOf,
             ))),
             parse_integer("i-0e".as_bytes()),
         );
 
         assert_eq!(
             Err(nom::Err::Failure(error::Error::new(
+                "00e".as_bytes(),
+                error::ErrorKind::OneOf,
+            ))),
+            parse_integer("i00e".as_bytes()),
+        );
+
+        assert_eq!(
+            Err(nom::Err::Failure(error::Error::new(
+                "01e".as_bytes(),
+                error::ErrorKind::OneOf,
+            ))),
+            parse_integer("i01e".as_bytes()),
+        );
+
+        assert_eq!(
+            Err(nom::Err::Failure(error::Error::new(
                 "e".as_bytes(),
-                error::ErrorKind::Digit,
+                error::ErrorKind::OneOf,
             ))),
             parse_integer("ie".as_bytes()),
         );
@@ -249,7 +293,7 @@ mod test {
         assert_eq!(
             Err(nom::Err::Failure(error::Error::new(
                 &[][..],
-                error::ErrorKind::Digit,
+                error::ErrorKind::OneOf,
             ))),
             parse_integer("i".as_bytes()),
         );
