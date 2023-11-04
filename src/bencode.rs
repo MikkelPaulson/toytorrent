@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::iter;
 
@@ -7,10 +8,10 @@ use nom::{branch, character, combinator, multi, sequence};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum BencodeValue<'a> {
-    Bytes(&'a [u8]),
+    Bytes(Cow<'a, [u8]>),
     Integer(i128),
     List(Vec<BencodeValue<'a>>),
-    Dict(HashMap<&'a [u8], BencodeValue<'a>>),
+    Dict(HashMap<Cow<'a, [u8]>, BencodeValue<'a>>),
 }
 
 impl<'a> TryFrom<&'a [u8]> for BencodeValue<'a> {
@@ -44,14 +45,15 @@ impl From<BencodeValue<'_>> for Vec<u8> {
                 .chain("e".as_bytes().into_iter().copied())
                 .collect(),
             BencodeValue::Dict(d) => {
-                let mut key_values: Vec<(&[u8], BencodeValue<'_>)> = d.into_iter().collect();
-                key_values.sort_by_key(|(k, _)| *k);
+                let mut key_values: Vec<(Cow<'_, [u8]>, BencodeValue<'_>)> =
+                    d.into_iter().collect();
+                key_values.sort_by(|(a, _), (b, _)| a.cmp(b));
 
                 iter::empty()
                     .chain("d".as_bytes().into_iter().copied())
                     .chain(key_values.into_iter().flat_map(|(k, v)| {
                         iter::empty()
-                            .chain(Vec::<u8>::from(BencodeValue::Bytes(k)).into_iter())
+                            .chain(Vec::<u8>::from(BencodeValue::Bytes(k.into())).into_iter())
                             .chain(Vec::<u8>::from(v).into_iter())
                     }))
                     .chain("e".as_bytes().into_iter().copied())
@@ -63,7 +65,7 @@ impl From<BencodeValue<'_>> for Vec<u8> {
 
 fn parse_once<'a>(b: &'a [u8]) -> IResult<&'a [u8], BencodeValue<'a>> {
     branch::alt((
-        combinator::map(parse_bytes, |b| BencodeValue::Bytes(b)),
+        combinator::map(parse_bytes, |b| BencodeValue::Bytes(b.into())),
         combinator::map(parse_integer, |i| BencodeValue::Integer(i)),
         combinator::map(parse_list, |l| BencodeValue::List(l)),
         combinator::map(parse_dict, |d| BencodeValue::Dict(d)),
@@ -120,7 +122,7 @@ fn parse_list<'a>(b: &'a [u8]) -> IResult<&'a [u8], Vec<BencodeValue<'a>>> {
     )(b)
 }
 
-fn parse_dict<'a>(b: &'a [u8]) -> IResult<&'a [u8], HashMap<&'a [u8], BencodeValue<'a>>> {
+fn parse_dict<'a>(b: &'a [u8]) -> IResult<&'a [u8], HashMap<Cow<'a, [u8]>, BencodeValue<'a>>> {
     combinator::map(
         sequence::preceded(
             bytes::tag("d"),
@@ -129,7 +131,7 @@ fn parse_dict<'a>(b: &'a [u8]) -> IResult<&'a [u8], HashMap<&'a [u8], BencodeVal
                 bytes::tag("e"),
             )),
         ),
-        |(v, _)| v.into_iter().collect(),
+        |(v, _)| v.into_iter().map(|(k, v)| (k.into(), v)).collect(),
     )(b)
 }
 
