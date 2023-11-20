@@ -55,6 +55,14 @@ impl From<[u8; 20]> for PeerId {
     }
 }
 
+impl TryFrom<&[u8]> for PeerId {
+    type Error = ();
+
+    fn try_from(input: &[u8]) -> Result<Self, Self::Error> {
+        Ok(PeerId(input.try_into().map_err(|_| ())?))
+    }
+}
+
 impl TryFrom<&[u8]> for MetainfoFile {
     type Error = ();
 

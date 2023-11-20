@@ -1,22 +1,6 @@
-use std::borrow::Cow;
-use std::net::IpAddr;
+use super::Peer;
 
-use tide::prelude::Deserialize;
-
-use super::{InfoHash, PeerId};
 use crate::bencode::BencodeValue;
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-pub struct Request {
-    info_hash: InfoHash,
-    peer_id: PeerId,
-    ip: Option<IpAddr>,
-    port: u16,
-    uploaded: u64,
-    downloaded: u64,
-    left: u64,
-    event: Option<Event>,
-}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Response {
@@ -32,21 +16,6 @@ pub enum Response {
     Failure {
         failure_reason: String,
     },
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Peer {
-    peer_id: Option<PeerId>,
-    ip: IpAddr,
-    port: u16,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum Event {
-    Started,
-    Completed,
-    Stopped,
 }
 
 impl TryFrom<&[u8]> for Response {
@@ -128,6 +97,12 @@ impl TryFrom<BencodeValue<'_>> for Response {
     }
 }
 
+impl From<&Response> for Vec<u8> {
+    fn from(input: &Response) -> Self {
+        (&BencodeValue::from(input)).into()
+    }
+}
+
 impl<'a> From<&'a Response> for BencodeValue<'a> {
     fn from(input: &'a Response) -> Self {
         match input {
@@ -194,126 +169,5 @@ impl<'a> From<&'a Response> for BencodeValue<'a> {
             )
             .into(),
         }
-    }
-}
-
-impl TryFrom<BencodeValue<'_>> for Peer {
-    type Error = ();
-
-    fn try_from(input: BencodeValue<'_>) -> Result<Self, Self::Error> {
-        let mut input_dict = input.to_dict().ok_or(())?;
-
-        let (
-            Some(BencodeValue::Bytes(peer_id_value)),
-            Some(BencodeValue::Bytes(ip_value)),
-            Some(BencodeValue::Integer(port_value)),
-        ) = (
-            input_dict.remove("peer id".as_bytes()),
-            input_dict.remove("ip".as_bytes()),
-            input_dict.remove("port".as_bytes()),
-        )
-        else {
-            return Err(());
-        };
-
-        let peer_id = peer_id_value.as_ref().try_into().map_err(|_| ())?;
-
-        let ip = String::from_utf8(ip_value.to_vec())
-            .map_err(|_| ())?
-            .parse()
-            .map_err(|_| ())?;
-
-        let port = port_value.try_into().map_err(|_| ())?;
-
-        Ok(Peer {
-            peer_id: Some(peer_id),
-            ip,
-            port,
-        })
-    }
-}
-
-impl TryFrom<&[u8]> for Peer {
-    type Error = ();
-
-    fn try_from(input: &[u8]) -> Result<Self, Self::Error> {
-        if input.len() != 6 {
-            return Err(());
-        }
-
-        let (Ok(ip_value), Ok(port_value)): (Result<[u8; 4], _>, Result<[u8; 2], _>) =
-            (input[0..4].try_into(), input[4..6].try_into())
-        else {
-            return Err(());
-        };
-
-        let ip = IpAddr::V4(ip_value.into());
-        let port = u16::from_be_bytes(port_value);
-
-        Ok(Peer {
-            peer_id: None,
-            ip,
-            port,
-        })
-    }
-}
-
-impl TryFrom<Peer> for [u8; 6] {
-    type Error = ();
-
-    fn try_from(input: Peer) -> Result<Self, Self::Error> {
-        let mut result = [0; 6];
-
-        let IpAddr::V4(ipv4_addr) = input.ip else {
-            return Err(());
-        };
-
-        u32::from(ipv4_addr)
-            .to_be_bytes()
-            .into_iter()
-            .enumerate()
-            .for_each(|(i, v)| result[i] = v);
-
-        input
-            .port
-            .to_be_bytes()
-            .into_iter()
-            .enumerate()
-            .for_each(|(i, v)| result[i + 4] = v);
-
-        Ok(result)
-    }
-}
-
-impl<'a> From<&'a Peer> for BencodeValue<'a> {
-    fn from(input: &'a Peer) -> BencodeValue<'a> {
-        BencodeValue::Dict(
-            [
-                (
-                    "ip".as_bytes().into(),
-                    BencodeValue::Bytes(Cow::Owned(input.ip.to_string().as_bytes().into())),
-                ),
-                (
-                    "port".as_bytes().into(),
-                    BencodeValue::Integer(input.port.into()),
-                ),
-            ]
-            .into_iter()
-            .chain(input.peer_id.iter().map(|peer_id| {
-                (
-                    "peer id".as_bytes().into(),
-                    BencodeValue::Bytes(Cow::Owned(peer_id.0.into())),
-                )
-            }))
-            .collect(),
-        )
-    }
-}
-
-impl TryFrom<&[u8]> for PeerId {
-    type Error = ();
-
-    fn try_from(input: &[u8]) -> Result<Self, Self::Error> {
-        Ok(PeerId(input.try_into().map_err(|_| ())?))
     }
 }
