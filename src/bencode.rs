@@ -14,6 +14,49 @@ pub enum BencodeValue<'a> {
     Dict(HashMap<Cow<'a, [u8]>, BencodeValue<'a>>),
 }
 
+impl<'a> BencodeValue<'a> {
+    pub fn to_string(self) -> Option<String> {
+        self.to_bytes()
+            .map(|bytes| String::from_utf8_lossy(&bytes).into())
+    }
+
+    pub fn to_bytes(self) -> Option<Cow<'a, [u8]>> {
+        if let Self::Bytes(bytes) = self {
+            Some(bytes)
+        } else {
+            None
+        }
+    }
+
+    pub fn to_i128(self) -> Option<i128> {
+        if let Self::Integer(integer) = self {
+            Some(integer)
+        } else {
+            None
+        }
+    }
+
+    pub fn to_u64(self) -> Option<u64> {
+        self.to_i128().and_then(|i| i.try_into().ok())
+    }
+
+    pub fn to_list(self) -> Option<Vec<BencodeValue<'a>>> {
+        if let Self::List(list) = self {
+            Some(list)
+        } else {
+            None
+        }
+    }
+
+    pub fn to_dict(self) -> Option<HashMap<Cow<'a, [u8]>, BencodeValue<'a>>> {
+        if let Self::Dict(dict) = self {
+            Some(dict)
+        } else {
+            None
+        }
+    }
+}
+
 impl<'a> TryFrom<&'a [u8]> for BencodeValue<'a> {
     type Error = ();
 
@@ -24,8 +67,8 @@ impl<'a> TryFrom<&'a [u8]> for BencodeValue<'a> {
     }
 }
 
-impl From<BencodeValue<'_>> for Vec<u8> {
-    fn from(input: BencodeValue<'_>) -> Self {
+impl From<&BencodeValue<'_>> for Vec<u8> {
+    fn from(input: &BencodeValue<'_>) -> Self {
         match input {
             BencodeValue::Bytes(b) => iter::empty()
                 .chain(b.len().to_string().as_bytes())
@@ -45,15 +88,14 @@ impl From<BencodeValue<'_>> for Vec<u8> {
                 .chain("e".as_bytes().into_iter().copied())
                 .collect(),
             BencodeValue::Dict(d) => {
-                let mut key_values: Vec<(Cow<'_, [u8]>, BencodeValue<'_>)> =
-                    d.into_iter().collect();
+                let mut key_values: Vec<(&Cow<'_, [u8]>, &BencodeValue<'_>)> = d.iter().collect();
                 key_values.sort_by(|(a, _), (b, _)| a.cmp(b));
 
                 iter::empty()
                     .chain("d".as_bytes().into_iter().copied())
                     .chain(key_values.into_iter().flat_map(|(k, v)| {
                         iter::empty()
-                            .chain(Vec::<u8>::from(BencodeValue::Bytes(k.into())).into_iter())
+                            .chain(Vec::<u8>::from(&BencodeValue::Bytes(k.clone())).into_iter())
                             .chain(Vec::<u8>::from(v).into_iter())
                     }))
                     .chain("e".as_bytes().into_iter().copied())
