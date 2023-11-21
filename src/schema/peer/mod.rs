@@ -1,6 +1,6 @@
 use std::iter;
 
-use super::{InfoHash, PeerId};
+use super::{Error, InfoHash, PeerId};
 
 pub enum PeerMessage {
     Handshake {
@@ -122,7 +122,7 @@ impl From<PeerMessage> for Vec<u8> {
 }
 
 impl TryFrom<&[u8]> for PeerMessage {
-    type Error = ();
+    type Error = Error;
 
     fn try_from(input: &[u8]) -> Result<Self, Self::Error> {
         if input.is_empty() {
@@ -159,7 +159,7 @@ impl TryFrom<&[u8]> for PeerMessage {
                 begin: u32::from_be_bytes(input[5..9].try_into().unwrap()),
                 length: u32::from_be_bytes(input[9..13].try_into().unwrap()),
             },
-            _ => return Err(()),
+            (i, l) => return Err(format!("Unexpected message ID {} of length {}", i, l).into()),
         })
     }
 }

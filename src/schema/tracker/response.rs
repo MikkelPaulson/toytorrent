@@ -1,6 +1,7 @@
 use super::Peer;
 
 use crate::bencode::BencodeValue;
+use crate::schema::Error;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Response {
@@ -19,18 +20,18 @@ pub enum Response {
 }
 
 impl TryFrom<&[u8]> for Response {
-    type Error = ();
+    type Error = Error;
 
     fn try_from(input: &[u8]) -> Result<Self, Self::Error> {
-        BencodeValue::try_from(input)?.try_into()
+        BencodeValue::decode(input)?.try_into()
     }
 }
 
 impl TryFrom<BencodeValue<'_>> for Response {
-    type Error = ();
+    type Error = Error;
 
     fn try_from(input: BencodeValue<'_>) -> Result<Self, Self::Error> {
-        let mut input_dict = input.to_dict().ok_or(())?;
+        let mut input_dict = input.to_dict().ok_or("Response value must be a dict")?;
 
         if let Some(failure_reason) = input_dict
             .remove("failure reason".as_bytes())
@@ -45,7 +46,7 @@ impl TryFrom<BencodeValue<'_>> for Response {
                 .remove("warning message".as_bytes())
                 .and_then(BencodeValue::to_string);
 
-            let interval = u64::try_from(interval_value).map_err(|_| ())?;
+            let interval = u64::try_from(interval_value).map_err(|e| e.to_string())?;
 
             let min_interval = input_dict
                 .remove("min interval".as_bytes())
@@ -76,10 +77,10 @@ impl TryFrom<BencodeValue<'_>> for Response {
                             .map(|chunk| Peer::try_from(chunk))
                             .collect::<Result<Vec<Peer>, _>>()?
                     } else {
-                        return Err(());
+                        return Err("Short peer list must be a multiple of 6 bytes long".into());
                     }
                 }
-                _ => return Err(()),
+                _ => return Err("Peer value must be either a list or byte string".into()),
             };
 
             Ok(Response::Success {
@@ -92,14 +93,14 @@ impl TryFrom<BencodeValue<'_>> for Response {
                 peers,
             })
         } else {
-            Err(())
+            Err("Tracker must respond with either \"interval\" and \"peers\", or \"failure reason\"".into())
         }
     }
 }
 
 impl From<&Response> for Vec<u8> {
     fn from(input: &Response) -> Self {
-        (&BencodeValue::from(input)).into()
+        BencodeValue::from(input).encode()
     }
 }
 
@@ -114,60 +115,30 @@ impl<'a> From<&'a Response> for BencodeValue<'a> {
                 complete,
                 incomplete,
                 peers,
-            } => BencodeValue::Dict(
-                [
-                    (
-                        "interval".as_bytes().into(),
-                        BencodeValue::Integer((*interval).into()),
-                    ),
-                    (
-                        "peers".as_bytes().into(),
-                        BencodeValue::List(peers.iter().map(|peer| peer.into()).collect()),
-                    ),
-                ]
-                .into_iter()
-                .chain(warning_message.into_iter().map(|s| {
-                    (
-                        "warning message".as_bytes().into(),
-                        BencodeValue::Bytes(s.as_bytes().into()),
-                    )
-                }))
-                .chain(min_interval.into_iter().map(|&i| {
-                    (
-                        "min interval".as_bytes().into(),
-                        BencodeValue::Integer(i.into()),
-                    )
-                }))
-                .chain(tracker_id.into_iter().map(|b| {
-                    (
-                        "tracker id".as_bytes().into(),
-                        BencodeValue::Bytes(b.into()),
-                    )
-                }))
-                .chain(complete.into_iter().map(|&i| {
-                    (
-                        "complete".as_bytes().into(),
-                        BencodeValue::Integer(i.into()),
-                    )
-                }))
-                .chain(incomplete.into_iter().map(|&i| {
-                    (
-                        "incomplete".as_bytes().into(),
-                        BencodeValue::Integer(i.into()),
-                    )
-                }))
-                .collect(),
+            } => [
+                ("interval", (*interval).into()),
+                ("peers", peers.iter().map(BencodeValue::from).collect()),
+            ]
+            .into_iter()
+            .chain(
+                warning_message
+                    .into_iter()
+                    .map(|s| ("warning message", s.as_str().into())),
             )
-            .into(),
-            Response::Failure { failure_reason } => BencodeValue::Dict(
-                [(
-                    "failure reason".as_bytes().into(),
-                    BencodeValue::Bytes(failure_reason.as_bytes().into()),
-                )]
-                .into_iter()
-                .collect(),
+            .chain(
+                min_interval
+                    .into_iter()
+                    .map(|&i| ("min interval", i.into())),
             )
-            .into(),
+            .chain(tracker_id.into_iter().map(|b| ("tracker id", b[..].into())))
+            .chain(complete.into_iter().map(|&i| ("complete", i.into())))
+            .chain(incomplete.into_iter().map(|&i| ("incomplete", i.into())))
+            .collect(),
+            Response::Failure { failure_reason } => {
+                [("failure reason", failure_reason.as_str().into())]
+                    .into_iter()
+                    .collect()
+            }
         }
     }
 }

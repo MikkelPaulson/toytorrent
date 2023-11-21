@@ -1,6 +1,9 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::iter;
+use std::time::{Duration, SystemTime};
+
+use crate::schema::Error;
 
 use nom::bytes::complete as bytes;
 use nom::IResult;
@@ -15,6 +18,48 @@ pub enum BencodeValue<'a> {
 }
 
 impl<'a> BencodeValue<'a> {
+    pub fn decode(input: &'a [u8]) -> Result<Self, Error> {
+        combinator::all_consuming(parse_once)(input)
+            .map(|(_, v)| v)
+            .map_err(|e| format!("{}", e).into())
+    }
+
+    pub fn encode(&self) -> Vec<u8> {
+        match self {
+            BencodeValue::Bytes(b) => iter::empty()
+                .chain(b.len().to_string().as_bytes())
+                .chain(b":")
+                .chain(b.into_iter())
+                .copied()
+                .collect(),
+            BencodeValue::Integer(i) => iter::empty()
+                .chain(b"i")
+                .chain(i.to_string().as_bytes())
+                .chain(b"e")
+                .copied()
+                .collect(),
+            BencodeValue::List(l) => iter::empty()
+                .chain(b"l".into_iter().copied())
+                .chain(l.into_iter().flat_map(|v| v.encode().into_iter()))
+                .chain(b"e".into_iter().copied())
+                .collect(),
+            BencodeValue::Dict(d) => {
+                let mut key_values: Vec<(&Cow<'_, [u8]>, &BencodeValue<'_>)> = d.iter().collect();
+                key_values.sort_by(|(a, _), (b, _)| a.cmp(b));
+
+                iter::empty()
+                    .chain(b"d".into_iter().copied())
+                    .chain(key_values.into_iter().flat_map(|(k, v)| {
+                        iter::empty()
+                            .chain(BencodeValue::Bytes(k.clone()).encode().into_iter())
+                            .chain(v.encode().into_iter())
+                    }))
+                    .chain(b"e".into_iter().copied())
+                    .collect()
+            }
+        }
+    }
+
     pub fn to_string(self) -> Option<String> {
         self.to_bytes()
             .map(|bytes| String::from_utf8_lossy(&bytes).into())
@@ -55,53 +100,88 @@ impl<'a> BencodeValue<'a> {
             None
         }
     }
-}
 
-impl<'a> TryFrom<&'a [u8]> for BencodeValue<'a> {
-    type Error = ();
-
-    fn try_from(value: &'a [u8]) -> Result<Self, Self::Error> {
-        combinator::all_consuming(parse_once)(value)
-            .map(|(_, v)| v)
-            .map_err(|_| ())
+    pub fn to_time(self) -> Option<SystemTime> {
+        self.to_i128().and_then(|i| {
+            if i.is_negative() {
+                (i * -1)
+                    .try_into()
+                    .map(|u| SystemTime::UNIX_EPOCH - Duration::from_secs(u))
+            } else {
+                i.try_into()
+                    .map(|u| SystemTime::UNIX_EPOCH + Duration::from_secs(u))
+            }
+            .ok()
+        })
     }
 }
 
-impl From<&BencodeValue<'_>> for Vec<u8> {
-    fn from(input: &BencodeValue<'_>) -> Self {
-        match input {
-            BencodeValue::Bytes(b) => iter::empty()
-                .chain(b.len().to_string().as_bytes())
-                .chain(":".as_bytes())
-                .chain(b.into_iter())
-                .copied()
-                .collect(),
-            BencodeValue::Integer(i) => iter::empty()
-                .chain("i".as_bytes())
-                .chain(i.to_string().as_bytes())
-                .chain("e".as_bytes())
-                .copied()
-                .collect(),
-            BencodeValue::List(l) => iter::empty()
-                .chain("l".as_bytes().into_iter().copied())
-                .chain(l.into_iter().flat_map(|v| Vec::<u8>::from(v).into_iter()))
-                .chain("e".as_bytes().into_iter().copied())
-                .collect(),
-            BencodeValue::Dict(d) => {
-                let mut key_values: Vec<(&Cow<'_, [u8]>, &BencodeValue<'_>)> = d.iter().collect();
-                key_values.sort_by(|(a, _), (b, _)| a.cmp(b));
+impl<'a> From<&'a [u8]> for BencodeValue<'a> {
+    fn from(input: &'a [u8]) -> Self {
+        BencodeValue::Bytes(input.into())
+    }
+}
 
-                iter::empty()
-                    .chain("d".as_bytes().into_iter().copied())
-                    .chain(key_values.into_iter().flat_map(|(k, v)| {
-                        iter::empty()
-                            .chain(Vec::<u8>::from(&BencodeValue::Bytes(k.clone())).into_iter())
-                            .chain(Vec::<u8>::from(v).into_iter())
-                    }))
-                    .chain("e".as_bytes().into_iter().copied())
-                    .collect()
-            }
-        }
+impl<'a> From<Vec<u8>> for BencodeValue<'a> {
+    fn from(input: Vec<u8>) -> Self {
+        BencodeValue::Bytes(input.into())
+    }
+}
+
+impl<'a> From<&'a str> for BencodeValue<'a> {
+    fn from(input: &'a str) -> Self {
+        input.as_bytes().into()
+    }
+}
+
+impl From<String> for BencodeValue<'_> {
+    fn from(input: String) -> Self {
+        input.into_bytes().into()
+    }
+}
+
+impl From<&SystemTime> for BencodeValue<'_> {
+    fn from(input: &SystemTime) -> Self {
+        BencodeValue::Integer(
+            input
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .map(|u| u.as_secs().into())
+                .unwrap_or_else(|e| i128::from(e.duration().as_secs()) * -1),
+        )
+    }
+}
+
+impl From<i128> for BencodeValue<'_> {
+    fn from(input: i128) -> Self {
+        BencodeValue::Integer(input)
+    }
+}
+
+impl From<u64> for BencodeValue<'_> {
+    fn from(input: u64) -> Self {
+        i128::from(input).into()
+    }
+}
+
+impl<'a> From<Vec<BencodeValue<'a>>> for BencodeValue<'a> {
+    fn from(input: Vec<BencodeValue<'a>>) -> Self {
+        BencodeValue::List(input)
+    }
+}
+
+impl<'a> iter::FromIterator<(&'a str, BencodeValue<'a>)> for BencodeValue<'a> {
+    fn from_iter<I: IntoIterator<Item = (&'a str, BencodeValue<'a>)>>(iter: I) -> Self {
+        BencodeValue::Dict(
+            iter.into_iter()
+                .map(|(k, v)| (k.as_bytes().into(), v))
+                .collect(),
+        )
+    }
+}
+
+impl<'a> iter::FromIterator<BencodeValue<'a>> for BencodeValue<'a> {
+    fn from_iter<I: IntoIterator<Item = BencodeValue<'a>>>(iter: I) -> Self {
+        BencodeValue::List(iter.into_iter().collect())
     }
 }
 
@@ -184,111 +264,105 @@ mod test {
 
     #[test]
     fn parse_bytes_test_success() {
-        assert_eq!(
-            Ok((&[][..], "spam".as_bytes())),
-            parse_bytes("4:spam".as_bytes()),
-        );
+        assert_eq!(Ok((&[][..], &b"spam"[..])), parse_bytes(&b"4:spam"[..]),);
 
-        assert_eq!(Ok((&[][..], &[][..])), parse_bytes("0:".as_bytes()),);
+        assert_eq!(Ok((&[][..], &[][..])), parse_bytes(&b"0:"[..]),);
 
-        assert_eq!(
-            Ok(("m".as_bytes(), "spa".as_bytes())),
-            parse_bytes("3:spam".as_bytes()),
-        );
+        assert_eq!(Ok((&b"m"[..], &b"spa"[..])), parse_bytes(&b"3:spam"[..]),);
     }
 
     #[test]
     fn parse_bytes_test_error() {
         assert_eq!(
             Err(nom::Err::Error(error::Error::new(
-                ":spam".as_bytes(),
+                &b":spam"[..],
                 error::ErrorKind::Digit,
             ))),
-            parse_bytes(":spam".as_bytes()),
+            parse_bytes(&b":spam"[..]),
         );
 
         assert_eq!(
             Err(nom::Err::Error(error::Error::new(
-                "i5e".as_bytes(),
+                &b"i5e"[..],
                 error::ErrorKind::Digit,
             ))),
-            parse_bytes("i5e".as_bytes()),
+            parse_bytes(&b"i5e"[..]),
         );
 
         assert_eq!(
             Err(nom::Err::Error(error::Error::new(
-                "le".as_bytes(),
+                &b"le"[..],
                 error::ErrorKind::Digit,
             ))),
-            parse_bytes("le".as_bytes()),
+            parse_bytes(&b"le"[..]),
         );
 
         assert_eq!(
             Err(nom::Err::Error(error::Error::new(
-                "de".as_bytes(),
+                &b"de"[..],
                 error::ErrorKind::Digit,
             ))),
-            parse_bytes("de".as_bytes()),
+            parse_bytes(&b"de"[..]),
         );
 
         assert_eq!(
             Err(nom::Err::Error(error::Error::new(
-                "5:spam".as_bytes(),
+                &b"5:spam"[..],
                 error::ErrorKind::Complete,
             ))),
-            parse_bytes("5:spam".as_bytes()),
+            parse_bytes(&b"5:spam"[..]),
         );
 
         assert_eq!(
             Err(nom::Err::Error(error::Error::new(
-                "spam".as_bytes(),
+                &b"spam"[..],
                 error::ErrorKind::Tag,
             ))),
-            parse_bytes("5spam".as_bytes()),
+            parse_bytes(&b"5spam"[..]),
         );
 
         assert_eq!(
             Err(nom::Err::Error(error::Error::new(
-                "04:spam".as_bytes(),
+                &b"04:spam"[..],
                 error::ErrorKind::Not,
             ))),
-            parse_bytes("04:spam".as_bytes()),
+            parse_bytes(&b"04:spam"[..]),
         );
     }
 
     #[test]
     fn parse_integer_test_success() {
-        assert_eq!(Ok((&[][..], 0)), parse_integer("i0e".as_bytes()));
+        assert_eq!(Ok((&[][..], 0)), parse_integer(&b"i0e"[..]));
 
-        assert_eq!(Ok((&[][..], 999)), parse_integer("i999e".as_bytes()));
+        assert_eq!(Ok((&[][..], 999)), parse_integer(&b"i999e"[..]));
 
-        assert_eq!(Ok((&[][..], -999)), parse_integer("i-999e".as_bytes()));
+        assert_eq!(Ok((&[][..], -999)), parse_integer(&b"i-999e"[..]));
     }
 
     #[test]
     fn parse_integer_test_error() {
         assert_eq!(
             Err(nom::Err::Error(error::Error::new(
-                "5:spam".as_bytes(),
+                &b"5:spam"[..],
                 error::ErrorKind::Tag,
             ))),
-            parse_integer("5:spam".as_bytes()),
+            parse_integer(&b"5:spam"[..]),
         );
 
         assert_eq!(
             Err(nom::Err::Error(error::Error::new(
-                "le".as_bytes(),
+                &b"le"[..],
                 error::ErrorKind::Tag,
             ))),
-            parse_integer("le".as_bytes()),
+            parse_integer(&b"le"[..]),
         );
 
         assert_eq!(
             Err(nom::Err::Error(error::Error::new(
-                "de".as_bytes(),
+                &b"de"[..],
                 error::ErrorKind::Tag,
             ))),
-            parse_integer("de".as_bytes()),
+            parse_integer(&b"de"[..]),
         );
     }
 
@@ -296,34 +370,34 @@ mod test {
     fn parse_integer_test_failure() {
         assert_eq!(
             Err(nom::Err::Failure(error::Error::new(
-                "-0e".as_bytes(),
+                &b"-0e"[..],
                 error::ErrorKind::OneOf,
             ))),
-            parse_integer("i-0e".as_bytes()),
+            parse_integer(&b"i-0e"[..]),
         );
 
         assert_eq!(
             Err(nom::Err::Failure(error::Error::new(
-                "00e".as_bytes(),
+                &b"00e"[..],
                 error::ErrorKind::OneOf,
             ))),
-            parse_integer("i00e".as_bytes()),
+            parse_integer(&b"i00e"[..]),
         );
 
         assert_eq!(
             Err(nom::Err::Failure(error::Error::new(
-                "01e".as_bytes(),
+                &b"01e"[..],
                 error::ErrorKind::OneOf,
             ))),
-            parse_integer("i01e".as_bytes()),
+            parse_integer(&b"i01e"[..]),
         );
 
         assert_eq!(
             Err(nom::Err::Failure(error::Error::new(
-                "e".as_bytes(),
+                &b"e"[..],
                 error::ErrorKind::OneOf,
             ))),
-            parse_integer("ie".as_bytes()),
+            parse_integer(&b"ie"[..]),
         );
 
         assert_eq!(
@@ -331,7 +405,7 @@ mod test {
                 &[][..],
                 error::ErrorKind::Tag,
             ))),
-            parse_integer("i999999".as_bytes()),
+            parse_integer(&b"i999999"[..]),
         );
 
         assert_eq!(
@@ -339,7 +413,7 @@ mod test {
                 &[][..],
                 error::ErrorKind::OneOf,
             ))),
-            parse_integer("i".as_bytes()),
+            parse_integer(b"i"),
         );
     }
 
@@ -348,58 +422,52 @@ mod test {
         assert_eq!(
             Ok((
                 &[][..],
-                vec![
-                    BencodeValue::Bytes("spam".as_bytes()),
-                    BencodeValue::Bytes("eggs".as_bytes()),
-                ],
+                vec![BencodeValue::from("spam"), BencodeValue::from("eggs")],
             )),
-            parse_list("l4:spam4:eggse".as_bytes()),
+            parse_list(&b"l4:spam4:eggse"[..]),
         );
 
-        assert_eq!(Ok((&[][..], Vec::new())), parse_list("le".as_bytes()),);
+        assert_eq!(Ok((&[][..], Vec::new())), parse_list(&b"le"[..]));
 
         assert_eq!(
             Ok((
                 &[][..],
                 vec![
-                    BencodeValue::Bytes("str".as_bytes()),
-                    BencodeValue::Integer(123),
-                    BencodeValue::List(vec![BencodeValue::Bytes("nested".as_bytes())])
+                    BencodeValue::from("str"),
+                    BencodeValue::from(123u64),
+                    BencodeValue::from(vec![BencodeValue::from("nested")])
                 ],
             )),
-            parse_list("l3:stri123el6:nestedee".as_bytes()),
+            parse_list(&b"l3:stri123el6:nestedee"[..]),
         );
 
-        assert_eq!(
-            Ok(("e".as_bytes(), Vec::new())),
-            parse_list("lee".as_bytes()),
-        );
+        assert_eq!(Ok((&b"e"[..], Vec::new())), parse_list(&b"lee"[..]),);
     }
 
     #[test]
     fn parse_list_test_error() {
         assert_eq!(
             Err(nom::Err::Error(error::Error::new(
-                "5:spam".as_bytes(),
+                &b"5:spam"[..],
                 error::ErrorKind::Tag,
             ))),
-            parse_list("5:spam".as_bytes()),
+            parse_list(&b"5:spam"[..]),
         );
 
         assert_eq!(
             Err(nom::Err::Error(error::Error::new(
-                "i0e".as_bytes(),
+                &b"i0e"[..],
                 error::ErrorKind::Tag,
             ))),
-            parse_list("i0e".as_bytes()),
+            parse_list(&b"i0e"[..]),
         );
 
         assert_eq!(
             Err(nom::Err::Error(error::Error::new(
-                "de".as_bytes(),
+                &b"de"[..],
                 error::ErrorKind::Tag,
             ))),
-            parse_list("de".as_bytes()),
+            parse_list(&b"de"[..]),
         );
     }
 
@@ -410,7 +478,7 @@ mod test {
                 &[][..],
                 error::ErrorKind::Tag,
             ))),
-            parse_list("li5e".as_bytes()),
+            parse_list(&b"li5e"[..]),
         );
     }
 
@@ -418,58 +486,48 @@ mod test {
     fn parse_dict_test_success() {
         {
             let result: HashMap<_, _> = [
-                ("cow".as_bytes(), BencodeValue::Bytes("moo".as_bytes())),
-                ("spam".as_bytes(), BencodeValue::Bytes("eggs".as_bytes())),
+                (b"cow"[..].into(), BencodeValue::from("moo")),
+                (b"spam"[..].into(), BencodeValue::from("eggs")),
             ]
             .into_iter()
             .collect();
 
             assert_eq!(
                 Ok((&[][..], result)),
-                parse_dict("d3:cow3:moo4:spam4:eggse".as_bytes()),
+                parse_dict(&b"d3:cow3:moo4:spam4:eggse"[..]),
             );
         }
 
         {
             let result: HashMap<_, _> = [(
-                "spam".as_bytes(),
-                BencodeValue::List(vec![
-                    BencodeValue::Bytes("a".as_bytes()),
-                    BencodeValue::Bytes("b".as_bytes()),
-                ]),
+                b"spam"[..].into(),
+                BencodeValue::from(vec![BencodeValue::from("a"), BencodeValue::from("b")]),
             )]
             .into_iter()
             .collect();
 
-            assert_eq!(
-                Ok((&[][..], result)),
-                parse_dict("d4:spaml1:a1:bee".as_bytes()),
-            );
+            assert_eq!(Ok((&[][..], result)), parse_dict(&b"d4:spaml1:a1:bee"[..]),);
         }
 
         {
             let result: HashMap<_, _> = [
                 (
-                    "start".as_bytes(),
-                    BencodeValue::Dict(
-                        [
-                            ("a".as_bytes(), BencodeValue::Integer(1)),
-                            ("b".as_bytes(), BencodeValue::Integer(2)),
-                        ]
-                        .into_iter()
-                        .collect(),
-                    ),
+                    b"start"[..].into(),
+                    [
+                        ("a", BencodeValue::Integer(1)),
+                        ("b", BencodeValue::Integer(2)),
+                    ]
+                    .into_iter()
+                    .collect::<BencodeValue<'_>>(),
                 ),
                 (
-                    "end".as_bytes(),
-                    BencodeValue::Dict(
-                        [
-                            ("y".as_bytes(), BencodeValue::Integer(25)),
-                            ("z".as_bytes(), BencodeValue::Integer(26)),
-                        ]
-                        .into_iter()
-                        .collect(),
-                    ),
+                    b"end"[..].into(),
+                    [
+                        ("y", BencodeValue::Integer(25)),
+                        ("z", BencodeValue::Integer(26)),
+                    ]
+                    .into_iter()
+                    .collect::<BencodeValue<'_>>(),
                 ),
             ]
             .into_iter()
@@ -477,42 +535,39 @@ mod test {
 
             assert_eq!(
                 Ok((&[][..], result)),
-                parse_dict("d5:startd1:ai1e1:bi2ee3:endd1:yi25e1:zi26eee".as_bytes()),
+                parse_dict(&b"d5:startd1:ai1e1:bi2ee3:endd1:yi25e1:zi26eee"[..]),
             );
         }
 
-        assert_eq!(Ok((&[][..], HashMap::new())), parse_dict("de".as_bytes()),);
+        assert_eq!(Ok((&[][..], HashMap::new())), parse_dict(&b"de"[..]),);
 
-        assert_eq!(
-            Ok(("e".as_bytes(), HashMap::new())),
-            parse_dict("dee".as_bytes()),
-        );
+        assert_eq!(Ok((&b"e"[..], HashMap::new())), parse_dict(&b"dee"[..]));
     }
 
     #[test]
     fn parse_dict_test_error() {
         assert_eq!(
             Err(nom::Err::Error(error::Error::new(
-                "5:spam".as_bytes(),
+                &b"5:spam"[..],
                 error::ErrorKind::Tag,
             ))),
-            parse_dict("5:spam".as_bytes()),
+            parse_dict(&b"5:spam"[..]),
         );
 
         assert_eq!(
             Err(nom::Err::Error(error::Error::new(
-                "i0e".as_bytes(),
+                &b"i0e"[..],
                 error::ErrorKind::Tag,
             ))),
-            parse_dict("i0e".as_bytes()),
+            parse_dict(&b"i0e"[..]),
         );
 
         assert_eq!(
             Err(nom::Err::Error(error::Error::new(
-                "le".as_bytes(),
+                &b"le"[..],
                 error::ErrorKind::Tag,
             ))),
-            parse_dict("le".as_bytes()),
+            parse_dict(&b"le"[..]),
         );
     }
 
@@ -523,87 +578,83 @@ mod test {
                 &[][..],
                 error::ErrorKind::Digit,
             ))),
-            parse_dict("d3:key3:val".as_bytes()),
+            parse_dict(&b"d3:key3:val"[..]),
         );
 
         assert_eq!(
             Err(nom::Err::Failure(error::Error::new(
-                "i1ei2ee".as_bytes(),
+                &b"i1ei2ee"[..],
                 error::ErrorKind::Digit,
             ))),
-            parse_dict("di1ei2ee".as_bytes()),
+            parse_dict(&b"di1ei2ee"[..]),
         );
     }
 
     #[test]
-    fn try_into_bencode_value_test_success() {
-        assert_eq!(Ok(BencodeValue::Bytes(&[][..])), "0:".as_bytes().try_into());
+    fn decode_test_success() {
+        assert_eq!(
+            Ok(BencodeValue::Bytes([][..].into())),
+            BencodeValue::decode(&b"0:"[..]),
+        );
 
-        assert_eq!(Ok(BencodeValue::Integer(0)), "i0e".as_bytes().try_into());
+        assert_eq!(
+            Ok(BencodeValue::Integer(0)),
+            BencodeValue::decode(&b"i0e"[..]),
+        );
 
         assert_eq!(
             Ok(BencodeValue::List(Vec::new())),
-            "le".as_bytes().try_into(),
+            BencodeValue::decode(&b"le"[..]),
         );
 
         assert_eq!(
             Ok(BencodeValue::Dict(HashMap::new())),
-            "de".as_bytes().try_into(),
+            BencodeValue::decode(&b"de"[..]),
         );
     }
 
     #[test]
-    fn try_into_bencode_value_test_failure() {
-        assert_eq!(Err(()), BencodeValue::try_from("0:e".as_bytes()));
+    fn decode_test_failure() {
+        assert_eq!(
+            Err("Parsing Error: Error { input: [101], code: Eof }".into()),
+            BencodeValue::decode(&b"0:e"[..]),
+        );
     }
 
     #[test]
-    fn from_bencode_value_test() {
-        assert_eq!("i3e".as_bytes(), Vec::<u8>::from(BencodeValue::Integer(3)));
+    fn encode_test() {
+        assert_eq!(&b"i3e"[..], BencodeValue::from(3u64).encode());
+
+        assert_eq!(&b"i-3e"[..], BencodeValue::from(-3i128).encode());
+
+        assert_eq!(&b"4:spam"[..], BencodeValue::from("spam").encode());
 
         assert_eq!(
-            "i-3e".as_bytes(),
-            Vec::<u8>::from(BencodeValue::Integer(-3)),
+            &b"l4:spam4:eggse"[..],
+            BencodeValue::from(vec![BencodeValue::from("spam"), BencodeValue::from("eggs")])
+                .encode(),
         );
 
         assert_eq!(
-            "4:spam".as_bytes(),
-            Vec::<u8>::from(BencodeValue::Bytes("spam".as_bytes())),
+            &b"d3:cow3:moo4:spam4:eggse"[..],
+            [
+                ("cow", BencodeValue::from("moo")),
+                ("spam", BencodeValue::from("eggs")),
+            ]
+            .into_iter()
+            .collect::<BencodeValue<'_>>()
+            .encode(),
         );
 
         assert_eq!(
-            "l4:spam4:eggse".as_bytes(),
-            Vec::<u8>::from(BencodeValue::List(vec![
-                BencodeValue::Bytes("spam".as_bytes()),
-                BencodeValue::Bytes("eggs".as_bytes()),
-            ])),
-        );
-
-        assert_eq!(
-            "d3:cow3:moo4:spam4:eggse".as_bytes(),
-            Vec::<u8>::from(BencodeValue::Dict(
-                [
-                    ("cow".as_bytes(), BencodeValue::Bytes("moo".as_bytes())),
-                    ("spam".as_bytes(), BencodeValue::Bytes("eggs".as_bytes())),
-                ]
-                .into_iter()
-                .collect()
-            )),
-        );
-
-        assert_eq!(
-            "d4:spaml1:a1:bee".as_bytes(),
-            Vec::<u8>::from(BencodeValue::Dict(
-                [(
-                    "spam".as_bytes(),
-                    BencodeValue::List(vec![
-                        BencodeValue::Bytes("a".as_bytes()),
-                        BencodeValue::Bytes("b".as_bytes()),
-                    ]),
-                )]
-                .into_iter()
-                .collect()
-            )),
+            &b"d4:spaml1:a1:bee"[..],
+            [(
+                "spam",
+                BencodeValue::from(vec![BencodeValue::from("a"), BencodeValue::from("b")]),
+            )]
+            .into_iter()
+            .collect::<BencodeValue<'_>>()
+            .encode(),
         );
     }
 }

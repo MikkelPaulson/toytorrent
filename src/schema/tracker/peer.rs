@@ -1,8 +1,7 @@
-use std::borrow::Cow;
 use std::net::IpAddr;
 
 use crate::bencode::BencodeValue;
-use crate::schema::PeerId;
+use crate::schema::{Error, PeerId};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Peer {
@@ -12,32 +11,28 @@ pub struct Peer {
 }
 
 impl TryFrom<BencodeValue<'_>> for Peer {
-    type Error = ();
+    type Error = Error;
 
     fn try_from(input: BencodeValue<'_>) -> Result<Self, Self::Error> {
-        let mut input_dict = input.to_dict().ok_or(())?;
+        let mut input_dict = input.to_dict().ok_or("Peer value must be a dict")?;
 
-        let (
-            Some(BencodeValue::Bytes(peer_id_value)),
-            Some(BencodeValue::Bytes(ip_value)),
-            Some(BencodeValue::Integer(port_value)),
-        ) = (
-            input_dict.remove("peer id".as_bytes()),
-            input_dict.remove("ip".as_bytes()),
-            input_dict.remove("port".as_bytes()),
-        )
-        else {
-            return Err(());
-        };
+        let peer_id = input_dict
+            .remove("peer_id".as_bytes())
+            .and_then(|benc| benc.to_bytes())
+            .and_then(|b| b.as_ref().try_into().ok())
+            .ok_or("Missing or invalid peer_id value")?;
 
-        let peer_id = peer_id_value.as_ref().try_into().map_err(|_| ())?;
+        let ip = input_dict
+            .remove("ip".as_bytes())
+            .and_then(|benc| benc.to_string())
+            .and_then(|s| s.parse().ok())
+            .ok_or("Missing or invalid IP value")?;
 
-        let ip = String::from_utf8(ip_value.to_vec())
-            .map_err(|_| ())?
-            .parse()
-            .map_err(|_| ())?;
-
-        let port = port_value.try_into().map_err(|_| ())?;
+        let port = input_dict
+            .remove("port".as_bytes())
+            .and_then(|benc| benc.to_u64())
+            .and_then(|u| u.try_into().ok())
+            .ok_or("Missing or invalid port value")?;
 
         Ok(Peer {
             peer_id: Some(peer_id),
@@ -48,11 +43,11 @@ impl TryFrom<BencodeValue<'_>> for Peer {
 }
 
 impl TryFrom<&[u8]> for Peer {
-    type Error = ();
+    type Error = Error;
 
     fn try_from(input: &[u8]) -> Result<Self, Self::Error> {
         if input.len() != 6 {
-            return Err(());
+            return Err("Short peer values must be 6 bytes long".into());
         }
 
         let ip = {
@@ -71,13 +66,13 @@ impl TryFrom<&[u8]> for Peer {
 }
 
 impl TryFrom<Peer> for [u8; 6] {
-    type Error = ();
+    type Error = Error;
 
     fn try_from(input: Peer) -> Result<Self, Self::Error> {
         let mut result = [0; 6];
 
         let IpAddr::V4(ipv4_addr) = input.ip else {
-            return Err(());
+            return Err("Only IPv4 values can be encoded with the short syntax".into());
         };
 
         ipv4_addr
@@ -93,25 +88,17 @@ impl TryFrom<Peer> for [u8; 6] {
 
 impl<'a> From<&'a Peer> for BencodeValue<'a> {
     fn from(input: &'a Peer) -> BencodeValue<'a> {
-        BencodeValue::Dict(
-            [
-                (
-                    "ip".as_bytes().into(),
-                    BencodeValue::Bytes(Cow::Owned(input.ip.to_string().as_bytes().into())),
-                ),
-                (
-                    "port".as_bytes().into(),
-                    BencodeValue::Integer(input.port.into()),
-                ),
-            ]
-            .into_iter()
-            .chain(input.peer_id.iter().map(|peer_id| {
-                (
-                    "peer id".as_bytes().into(),
-                    BencodeValue::Bytes(Cow::Owned(peer_id.0.into())),
-                )
-            }))
-            .collect(),
+        [
+            ("ip", input.ip.to_string().into()),
+            ("port", i128::from(input.port).into()),
+        ]
+        .into_iter()
+        .chain(
+            input
+                .peer_id
+                .iter()
+                .map(|peer_id| ("peer id", peer_id.0[..].into())),
         )
+        .collect()
     }
 }
