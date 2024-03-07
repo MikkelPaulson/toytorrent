@@ -1,3 +1,4 @@
+use std::hash::{Hash, Hasher};
 use std::net::IpAddr;
 
 use crate::bencode::BencodeValue;
@@ -8,6 +9,16 @@ pub struct Peer {
     peer_id: Option<PeerId>,
     ip: IpAddr,
     port: u16,
+}
+
+impl Hash for Peer {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        if let Some(peer_id) = &self.peer_id {
+            peer_id.hash(state);
+        } else {
+            self.ip.hash(state);
+        }
+    }
 }
 
 impl TryFrom<BencodeValue<'_>> for Peer {
