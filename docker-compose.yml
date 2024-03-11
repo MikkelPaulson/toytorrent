@@ -1,0 +1,29 @@
+version: '3.3'
+
+services:
+  tracker:
+    build:
+      context: .
+      dockerfile: docker/tracker.Dockerfile
+
+  client1:
+    build:
+      context: .
+      dockerfile: docker/client.Dockerfile
+
+  transmission1:
+    image: linuxserver/transmission:latest
+    volumes:
+      - ./docker/transmission1-config:/config
+      - ./tests/examples:/watch
+      - ./tests/downloads:/downloads
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+        #- TRANSMISSION_WEB_HOME= #optional
+        #- USER= #optional
+        #- PASS= #optional
+        #- WHITELIST= #optional
+        #- PEERPORT= #optional
+        #- HOST_WHITELIST= #optional
