@@ -1,14 +1,20 @@
+use std::cmp::{Ord, Ordering, PartialOrd};
 use std::hash::{Hash, Hasher};
 use std::net::IpAddr;
+use std::time::Instant;
 
 use crate::bencode::BencodeValue;
 use crate::schema::{Error, PeerId};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Peer {
-    peer_id: Option<PeerId>,
-    ip: IpAddr,
-    port: u16,
+    pub last_seen: Instant,
+    pub peer_id: Option<PeerId>,
+    pub ip: IpAddr,
+    pub port: u16,
+    pub uploaded: Option<u64>,
+    pub downloaded: Option<u64>,
+    pub left: Option<u64>,
 }
 
 impl Hash for Peer {
@@ -18,6 +24,18 @@ impl Hash for Peer {
         } else {
             self.ip.hash(state);
         }
+    }
+}
+
+impl Ord for Peer {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.last_seen.cmp(&other.last_seen)
+    }
+}
+
+impl PartialOrd for Peer {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.last_seen.partial_cmp(&other.last_seen)
     }
 }
 
@@ -46,9 +64,13 @@ impl TryFrom<BencodeValue<'_>> for Peer {
             .ok_or("Missing or invalid port value")?;
 
         Ok(Peer {
+            last_seen: Instant::now(),
             peer_id: Some(peer_id),
             ip,
             port,
+            uploaded: None,
+            downloaded: None,
+            left: None,
         })
     }
 }
@@ -69,9 +91,13 @@ impl TryFrom<&[u8]> for Peer {
         let port = u16::from_be_bytes(input[4..6].try_into().unwrap());
 
         Ok(Peer {
+            last_seen: Instant::now(),
             peer_id: None,
             ip,
             port,
+            uploaded: None,
+            downloaded: None,
+            left: None,
         })
     }
 }

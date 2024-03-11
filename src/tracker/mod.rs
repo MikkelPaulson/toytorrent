@@ -1,15 +1,16 @@
+mod torrent;
+
 use std::net::{IpAddr, SocketAddr};
-use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
+use std::sync::{Mutex, MutexGuard};
 
 use clap::Parser;
 
 use crate::schema;
 
-static mut TORRENTS: Option<HashMap<schema::InfoHash, Torrent>> = None;
+use torrent::Torrents;
 
-struct Torrent {
-    peers: HashSet<schema::tracker::Peer>,
-}
+static mut TORRENTS: Option<Rc<Mutex<Torrents>>> = None;
 
 /// A barebones BitTorrent tracker
 #[derive(Debug, Parser)]
@@ -30,12 +31,20 @@ pub struct Args {
     #[arg(long)]
     min_interval: Option<u32>,
 
+    /// The interval after which to consider a client dropped
+    #[arg(long, default_value_t = 900)]
+    timeout_interval: u32,
+
     /// The maximum number of peers to return
     #[arg(long, default_value_t = 30)]
     max_response_peers: u32,
 }
 
 pub async fn run(args: Args) -> tide::Result<()> {
+    unsafe {
+        TORRENTS = Some(Rc::new(Mutex::new(Torrents::default())));
+    }
+
     let mut app = tide::new();
     app.at("/announce").get(announce);
     println!("Listening on {}:{}", args.bind, args.port);
@@ -54,10 +63,41 @@ async fn announce(req: tide::Request<()>) -> tide::Result {
         })?;
     println!("{:?}", request);
 
+    let mut torrents = torrents();
+    let torrent = torrents
+        .get_or_insert(request.info_hash);
+
+    let peer = request.as_peer(
+        request
+            .ip
+            .or_else(|| {
+                req
+                    .remote()
+                    .and_then(|s| s.parse().ok())
+            })
+            .ok_or_else(|| tide::Error::from_str(500, "No client IP address"))?
+    );
+
+    if request.event == Some(schema::tracker::Event::Stopped) {
+        torrent.peers.remove(&peer);
+    } else {
+        torrent.peers.replace(peer);
+    }
+
+    if request.event == Some(schema::tracker::Event::Completed) {
+        torrent.downloaded += 1;
+    }
+
     let response = schema::tracker::Response::Failure { failure_reason: "Not implemented".to_string() };
     println!("{:?}", response);
 
     Ok(response.into())
+}
+
+fn torrents<'a>() -> MutexGuard<'a, Torrents> {
+    unsafe {
+        TORRENTS.as_ref().unwrap()
+    }.lock().unwrap()
 }
 
 impl From<schema::tracker::Response> for tide::Response {
@@ -74,7 +114,6 @@ impl From<schema::tracker::Response> for tide::Response {
 #[cfg(test)]
 mod test {
     use super::*;
-    use tide::http::{Url, Method, Request};
 
     #[test]
     fn announce_test() {

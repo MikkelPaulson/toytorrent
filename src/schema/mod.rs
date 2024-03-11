@@ -11,11 +11,11 @@ use tide::prelude::Deserialize;
 
 pub type Error = Cow<'static, str>;
 
-#[derive(Clone, Deserialize, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Deserialize, Eq, PartialEq, Hash)]
 #[serde(from = "[u8; 20]")]
 pub struct InfoHash([u8; 20]);
 
-#[derive(Clone, Deserialize, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Deserialize, Eq, PartialEq, Hash)]
 #[serde(from = "[u8; 20]")]
 pub struct PeerId([u8; 20]);
 

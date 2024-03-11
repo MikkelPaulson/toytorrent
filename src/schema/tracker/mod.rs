@@ -6,6 +6,7 @@ pub use response::Response;
 
 use std::net::IpAddr;
 use std::str::FromStr;
+use std::time::Instant;
 
 use tide::prelude::Deserialize;
 
@@ -29,6 +30,20 @@ pub enum Event {
     Started,
     Completed,
     Stopped,
+}
+
+impl Request {
+    pub fn as_peer(&self, origin_ip: IpAddr) -> Peer {
+        Peer {
+            last_seen: Instant::now(),
+            peer_id: Some(self.peer_id),
+            ip: self.ip.unwrap_or(origin_ip),
+            port: self.port,
+            uploaded: Some(self.uploaded),
+            downloaded: Some(self.downloaded),
+            left: Some(self.left),
+        }
+    }
 }
 
 impl FromStr for Request {
