@@ -1808,6 +1808,7 @@ dependencies = [
  "async-std",
  "clap",
  "nom",
+ "rand 0.8.5",
  "serde",
  "sha1 0.10.6",
  "tide",

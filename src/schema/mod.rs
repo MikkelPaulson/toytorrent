@@ -11,11 +11,11 @@ use tide::prelude::Deserialize;
 
 pub type Error = Cow<'static, str>;
 
-#[derive(Clone, Copy, Deserialize, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(from = "[u8; 20]")]
 pub struct InfoHash([u8; 20]);
 
-#[derive(Clone, Copy, Deserialize, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(from = "[u8; 20]")]
 pub struct PeerId([u8; 20]);
 
@@ -57,16 +57,25 @@ impl TryFrom<&[u8]> for PeerId {
 
 impl fmt::Debug for InfoHash {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "InfoHash(")?;
-        self.0.iter().try_for_each(|u| write!(f, "{:x}", u))?;
-        write!(f, ")")?;
-        Ok(())
+        write!(f, "InfoHash({})", self)
+    }
+}
+
+impl fmt::Display for InfoHash {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        self.0.iter().try_for_each(|u| write!(f, "{:x}", u))
     }
 }
 
 impl fmt::Debug for PeerId {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "PeerId({})", String::from_utf8_lossy(&self.0[..]))
+        write!(f, "PeerId({})", self)
+    }
+}
+
+impl fmt::Display for PeerId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(f, "{}", String::from_utf8_lossy(&self.0[..]))
     }
 }
 
@@ -102,4 +111,19 @@ fn parse_qs_to_bytes<const N: usize, T: From<[u8; N]>>(input: &str) -> Result<T,
     }
 
     Ok(result_arr.into())
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn peerid_hash_test() {
+        let mut set: HashSet<PeerId> = HashSet::new();
+
+        assert_eq!(true, set.insert([0; 20].into()));
+        assert_eq!(false, set.insert([0; 20].into()));
+        assert_eq!(1, set.len());
+    }
 }

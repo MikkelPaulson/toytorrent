@@ -2,7 +2,7 @@ mod peer;
 mod response;
 
 pub use peer::Peer;
-pub use response::Response;
+pub use response::{FailureResponse, Response, SuccessResponse};
 
 use std::net::IpAddr;
 use std::str::FromStr;
@@ -22,6 +22,13 @@ pub struct Request {
     pub downloaded: u64,
     pub left: u64,
     pub event: Option<Event>,
+
+    pub numwant: Option<u64>,
+    pub key: Option<Vec<u8>>,
+    pub compact: Option<bool>,
+    pub supportcrypto: Option<bool>,
+    pub no_peer_id: Option<bool>,
+    pub trackerid: Option<Vec<u8>>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
@@ -58,10 +65,16 @@ impl FromStr for Request {
         let mut downloaded: Option<u64> = None;
         let mut left: Option<u64> = None;
         let mut event: Option<Event> = None;
+        let mut numwant: Option<u64> = None;
+        let mut key: Option<Vec<u8>> = None;
+        let mut compact: Option<bool> = None;
+        let mut supportcrypto: Option<bool> = None;
+        let mut no_peer_id: Option<bool> = None;
+        let mut trackerid: Option<Vec<u8>> = None;
 
         for clause in input.split('&') {
-            if let Some((key, value)) = clause.split_once('=') {
-                match key {
+            if let Some((clause_key, value)) = clause.split_once('=') {
+                match clause_key {
                     "info_hash" => info_hash = Some(value.parse()?),
                     "peer_id" => peer_id = Some(value.parse()?),
                     "ip" => ip = Some(value.parse().map_err(|_| "Invalid \"ip\" value")?),
@@ -75,6 +88,14 @@ impl FromStr for Request {
                     }
                     "left" => left = Some(value.parse().map_err(|_| "Invalid \"left\" value")?),
                     "event" => event = Some(value.parse()?),
+                    "numwant" => {
+                        numwant = Some(value.parse().map_err(|_| "Invalid \"numwant\" value")?)
+                    }
+                    "key" => key = Some(value.as_bytes().to_vec()),
+                    "compact" => compact = Some(value == "1"),
+                    "supportcrypto" => supportcrypto = Some(value == "1"),
+                    "no_peer_id" => no_peer_id = Some(value == "1"),
+                    "trackerid" => trackerid = Some(value.as_bytes().to_vec()),
                     _ => {}
                 }
             }
@@ -98,6 +119,12 @@ impl FromStr for Request {
                 downloaded,
                 left,
                 event,
+                numwant,
+                key,
+                compact,
+                supportcrypto,
+                no_peer_id,
+                trackerid,
             })
         } else {
             Err("Missing one or more required fields.")

@@ -1,4 +1,5 @@
 use std::cmp::{Ord, Ordering, PartialOrd};
+use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::net::IpAddr;
 use std::time::Instant;
@@ -6,7 +7,7 @@ use std::time::Instant;
 use crate::bencode::BencodeValue;
 use crate::schema::{Error, PeerId};
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq)]
 pub struct Peer {
     pub last_seen: Instant,
     pub peer_id: Option<PeerId>,
@@ -15,6 +16,46 @@ pub struct Peer {
     pub uploaded: Option<u64>,
     pub downloaded: Option<u64>,
     pub left: Option<u64>,
+}
+
+impl fmt::Display for Peer {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        if let Some(peer_id) = self.peer_id {
+            write!(f, "{} ({}) -- ", peer_id, self.ip)?;
+        } else {
+            write!(f, "{} -- ", self.ip)?;
+        }
+
+        if let Some(uploaded) = self.uploaded {
+            write!(f, "{} uploaded, ", uploaded)?;
+        } else {
+            write!(f, "? uploaded, ")?;
+        }
+
+        if let Some(downloaded) = self.downloaded {
+            write!(f, "{} downloaded, ", downloaded)?;
+        } else {
+            write!(f, "? downloaded, ")?;
+        }
+
+        if let Some(left) = self.left {
+            write!(f, "{} left", left)?;
+        } else {
+            write!(f, "? left")?;
+        }
+
+        Ok(())
+    }
+}
+
+impl PartialEq for Peer {
+    fn eq(&self, other: &Self) -> bool {
+        if let (Some(a), Some(b)) = (self.peer_id, other.peer_id) {
+            a == b
+        } else {
+            self.ip == other.ip
+        }
+    }
 }
 
 impl Hash for Peer {
@@ -29,13 +70,17 @@ impl Hash for Peer {
 
 impl Ord for Peer {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.last_seen.cmp(&other.last_seen)
+        if let (Some(a), Some(b)) = (self.peer_id, other.peer_id) {
+            a.cmp(&b)
+        } else {
+            self.ip.cmp(&other.ip)
+        }
     }
 }
 
 impl PartialOrd for Peer {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.last_seen.partial_cmp(&other.last_seen)
+        Some(self.cmp(other))
     }
 }
 
@@ -137,5 +182,46 @@ impl<'a> From<&'a Peer> for BencodeValue<'a> {
                 .map(|peer_id| ("peer id", peer_id.0[..].into())),
         )
         .collect()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::net::Ipv4Addr;
+
+    #[test]
+    fn hash_test() {
+        use std::collections::HashSet;
+
+        let mut set = HashSet::new();
+
+        assert_eq!(
+            true,
+            set.insert(Peer {
+                last_seen: Instant::now(),
+                peer_id: Some([0; 20].into()),
+                ip: Ipv4Addr::LOCALHOST.into(),
+                port: 65535,
+                uploaded: None,
+                downloaded: None,
+                left: None,
+            }),
+        );
+
+        assert_eq!(
+            false,
+            set.insert(Peer {
+                last_seen: Instant::now(),
+                peer_id: Some([0; 20].into()),
+                ip: Ipv4Addr::LOCALHOST.into(),
+                port: 65535,
+                uploaded: None,
+                downloaded: None,
+                left: None,
+            }),
+        );
+
+        assert_eq!(1, set.len());
     }
 }

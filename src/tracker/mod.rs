@@ -1,3 +1,4 @@
+mod announce;
 mod torrent;
 
 use std::net::{IpAddr, SocketAddr};
@@ -46,58 +47,54 @@ pub async fn run(args: Args) -> tide::Result<()> {
     }
 
     let mut app = tide::new();
-    app.at("/announce").get(announce);
+    app.at("/announce").get(announce_route);
     println!("Listening on {}:{}", args.bind, args.port);
     app.listen(SocketAddr::from((args.bind, args.port))).await?;
 
     Ok(())
 }
 
-async fn announce(req: tide::Request<()>) -> tide::Result {
-    let request: schema::tracker::Request = req.url().query()
+async fn announce_route(req: tide::Request<()>) -> tide::Result {
+    println!("Raw request: {:?}", req);
+    let request = match req
+        .url()
+        .query()
         .ok_or("Missing query")
         .and_then(|s| s.parse())
-        .map_err(|_| {
-            eprintln!("Missing or invalid query string: {:?}", req.url().query());
-            tide::Error::from_str(400, format!("Missing or invalid query string: {:?}", req.url().query()))
-        })?;
-    println!("{:?}", request);
-
-    let mut torrents = torrents();
-    let torrent = torrents
-        .get_or_insert(request.info_hash);
-
-    let peer = request.as_peer(
-        request
-            .ip
-            .or_else(|| {
-                req
-                    .remote()
-                    .and_then(|s| s.parse().ok())
+    {
+        Ok(r) => r,
+        Err(e) => {
+            return schema::tracker::Response::from(schema::tracker::FailureResponse {
+                failure_reason: e.to_string(),
             })
-            .ok_or_else(|| tide::Error::from_str(500, "No client IP address"))?
-    );
+            .into();
+        }
+    };
 
-    if request.event == Some(schema::tracker::Event::Stopped) {
-        torrent.peers.remove(&peer);
-    } else {
-        torrent.peers.replace(peer);
-    }
+    let Some(remote_socket) = req.remote().and_then(|s| s.parse::<SocketAddr>().ok()) else {
+        return schema::tracker::Response::from(schema::tracker::FailureResponse {
+            failure_reason: "Missing remote address".to_string(),
+        })
+        .into();
+    };
 
-    if request.event == Some(schema::tracker::Event::Completed) {
-        torrent.downloaded += 1;
-    }
+    println!("Request: {:?}", request);
+    let response = announce::announce(request, remote_socket.ip()).await;
+    println!("Response: {:?}\n", response);
 
-    let response = schema::tracker::Response::Failure { failure_reason: "Not implemented".to_string() };
-    println!("{:?}", response);
+    println!("{}", torrents());
 
-    Ok(response.into())
+    response.into()
 }
 
 fn torrents<'a>() -> MutexGuard<'a, Torrents> {
-    unsafe {
-        TORRENTS.as_ref().unwrap()
-    }.lock().unwrap()
+    unsafe { TORRENTS.as_ref().unwrap() }.lock().unwrap()
+}
+
+impl From<schema::tracker::Response> for tide::Result {
+    fn from(input: schema::tracker::Response) -> Self {
+        Ok(input.into())
+    }
 }
 
 impl From<schema::tracker::Response> for tide::Response {
@@ -132,6 +129,13 @@ mod test {
                 downloaded: 0,
                 left: 5037662208,
                 event: Some(schema::tracker::Event::Started),
+
+                numwant: Some(80),
+                key: Some("CE09B16B".as_bytes().to_vec()),
+                compact: Some(true),
+                supportcrypto: Some(true),
+                no_peer_id: None,
+                trackerid: None,
             }),
             "info_hash=uC%9D%5D%E3C%99%9A%B3w%C6%17%C2%C6G%90%29V%E2%82&peer_id=-TR4050-mtwvc5ch9psu&port=51413&uploaded=0&downloaded=0&left=5037662208&numwant=80&key=CE09B16B&compact=1&supportcrypto=1&event=started".parse::<schema::tracker::Request>(),
         );

@@ -5,18 +5,36 @@ use crate::schema::Error;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Response {
-    Success {
-        warning_message: Option<String>,
-        interval: u64,
-        min_interval: Option<u64>,
-        tracker_id: Option<Vec<u8>>,
-        complete: Option<u64>,
-        incomplete: Option<u64>,
-        peers: Vec<Peer>,
-    },
-    Failure {
-        failure_reason: String,
-    },
+    Success(SuccessResponse),
+    Failure(FailureResponse),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SuccessResponse {
+    pub warning_message: Option<String>,
+    pub interval: u64,
+    pub min_interval: Option<u64>,
+    pub tracker_id: Option<Vec<u8>>,
+    pub complete: Option<u64>,
+    pub incomplete: Option<u64>,
+    pub peers: Vec<Peer>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FailureResponse {
+    pub failure_reason: String,
+}
+
+impl From<SuccessResponse> for Response {
+    fn from(input: SuccessResponse) -> Self {
+        Response::Success(input)
+    }
+}
+
+impl From<FailureResponse> for Response {
+    fn from(input: FailureResponse) -> Self {
+        Response::Failure(input)
+    }
 }
 
 impl TryFrom<&[u8]> for Response {
@@ -37,7 +55,7 @@ impl TryFrom<BencodeValue<'_>> for Response {
             .remove("failure reason".as_bytes())
             .and_then(BencodeValue::to_string)
         {
-            Ok(Response::Failure { failure_reason })
+            Ok(Response::Failure(FailureResponse { failure_reason }))
         } else if let (Some(BencodeValue::Integer(interval_value)), Some(peers_value)) = (
             input_dict.remove("interval".as_bytes()),
             input_dict.remove("peers".as_bytes()),
@@ -83,7 +101,7 @@ impl TryFrom<BencodeValue<'_>> for Response {
                 _ => return Err("Peer value must be either a list or byte string".into()),
             };
 
-            Ok(Response::Success {
+            Ok(Response::Success(SuccessResponse {
                 warning_message,
                 interval,
                 min_interval,
@@ -91,7 +109,7 @@ impl TryFrom<BencodeValue<'_>> for Response {
                 complete,
                 incomplete,
                 peers,
-            })
+            }))
         } else {
             Err("Tracker must respond with either \"interval\" and \"peers\", or \"failure reason\"".into())
         }
@@ -107,7 +125,7 @@ impl From<&Response> for Vec<u8> {
 impl<'a> From<&'a Response> for BencodeValue<'a> {
     fn from(input: &'a Response) -> Self {
         match input {
-            Response::Success {
+            Response::Success(SuccessResponse {
                 warning_message,
                 interval,
                 min_interval,
@@ -115,7 +133,7 @@ impl<'a> From<&'a Response> for BencodeValue<'a> {
                 complete,
                 incomplete,
                 peers,
-            } => [
+            }) => [
                 ("interval", (*interval).into()),
                 ("peers", peers.iter().map(BencodeValue::from).collect()),
             ]
@@ -134,7 +152,7 @@ impl<'a> From<&'a Response> for BencodeValue<'a> {
             .chain(complete.into_iter().map(|&i| ("complete", i.into())))
             .chain(incomplete.into_iter().map(|&i| ("incomplete", i.into())))
             .collect(),
-            Response::Failure { failure_reason } => {
+            Response::Failure(FailureResponse { failure_reason }) => {
                 [("failure reason", failure_reason.as_str().into())]
                     .into_iter()
                     .collect()
