@@ -1,29 +1,31 @@
 use std::cmp::{Ord, Ordering, PartialOrd};
 use std::fmt;
 use std::hash::{Hash, Hasher};
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::time::Instant;
 
 use crate::bencode::BencodeValue;
-use crate::schema::{Error, PeerId};
+use crate::schema::{Error, PeerId, PeerKey};
 
 #[derive(Clone, Debug, Eq)]
 pub struct Peer {
     pub last_seen: Instant,
     pub peer_id: Option<PeerId>,
-    pub ip: IpAddr,
-    pub port: u16,
+    pub addr: SocketAddr,
     pub uploaded: Option<u64>,
     pub downloaded: Option<u64>,
     pub left: Option<u64>,
+
+    pub key: Option<PeerKey>,
+    pub supportcrypto: Option<bool>,
 }
 
 impl fmt::Display for Peer {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         if let Some(peer_id) = self.peer_id {
-            write!(f, "{} ({}) -- ", peer_id, self.ip)?;
+            write!(f, "{} ({}) -- ", peer_id, self.addr)?;
         } else {
-            write!(f, "{} -- ", self.ip)?;
+            write!(f, "{} -- ", self.addr)?;
         }
 
         if let Some(uploaded) = self.uploaded {
@@ -53,7 +55,7 @@ impl PartialEq for Peer {
         if let (Some(a), Some(b)) = (self.peer_id, other.peer_id) {
             a == b
         } else {
-            self.ip == other.ip
+            self.addr == other.addr
         }
     }
 }
@@ -62,8 +64,12 @@ impl Hash for Peer {
     fn hash<H: Hasher>(&self, state: &mut H) {
         if let Some(peer_id) = &self.peer_id {
             peer_id.hash(state);
+        }
+
+        if let Some(key) = &self.key {
+            key.hash(state);
         } else {
-            self.ip.hash(state);
+            self.addr.hash(state);
         }
     }
 }
@@ -73,7 +79,7 @@ impl Ord for Peer {
         if let (Some(a), Some(b)) = (self.peer_id, other.peer_id) {
             a.cmp(&b)
         } else {
-            self.ip.cmp(&other.ip)
+            self.addr.cmp(&other.addr)
         }
     }
 }
@@ -111,11 +117,12 @@ impl TryFrom<BencodeValue<'_>> for Peer {
         Ok(Peer {
             last_seen: Instant::now(),
             peer_id: Some(peer_id),
-            ip,
-            port,
+            addr: SocketAddr::new(ip, port),
             uploaded: None,
             downloaded: None,
             left: None,
+            key: None,
+            supportcrypto: None,
         })
     }
 }
@@ -138,11 +145,12 @@ impl TryFrom<&[u8]> for Peer {
         Ok(Peer {
             last_seen: Instant::now(),
             peer_id: None,
-            ip,
-            port,
+            addr: SocketAddr::new(ip, port),
             uploaded: None,
             downloaded: None,
             left: None,
+            key: None,
+            supportcrypto: None,
         })
     }
 }
@@ -153,14 +161,15 @@ impl TryFrom<Peer> for [u8; 6] {
     fn try_from(input: Peer) -> Result<Self, Self::Error> {
         let mut result = [0; 6];
 
-        let IpAddr::V4(ipv4_addr) = input.ip else {
+        let SocketAddr::V4(ipv4_addr) = input.addr else {
             return Err("Only IPv4 values can be encoded with the short syntax".into());
         };
 
         ipv4_addr
+            .ip()
             .octets()
             .into_iter()
-            .chain(input.port.to_be_bytes().into_iter())
+            .chain(ipv4_addr.port().to_be_bytes().into_iter())
             .enumerate()
             .for_each(|(i, v)| result[i] = v);
 
@@ -171,8 +180,8 @@ impl TryFrom<Peer> for [u8; 6] {
 impl<'a> From<&'a Peer> for BencodeValue<'a> {
     fn from(input: &'a Peer) -> BencodeValue<'a> {
         [
-            ("ip", input.ip.to_string().into()),
-            ("port", i128::from(input.port).into()),
+            ("ip", input.addr.ip().to_string().into()),
+            ("port", i128::from(input.addr.port()).into()),
         ]
         .into_iter()
         .chain(

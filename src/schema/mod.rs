@@ -19,6 +19,12 @@ pub struct InfoHash([u8; 20]);
 #[serde(from = "[u8; 20]")]
 pub struct PeerId([u8; 20]);
 
+#[derive(Clone, Deserialize, Eq, Hash, PartialEq)]
+#[serde(from = "&[u8]")]
+pub struct PeerKey(Vec<u8>);
+
+pub struct Bytes(u64);
+
 impl FromStr for InfoHash {
     type Err = &'static str;
 
@@ -44,6 +50,12 @@ impl From<[u8; 20]> for InfoHash {
 impl From<[u8; 20]> for PeerId {
     fn from(input: [u8; 20]) -> Self {
         Self(input)
+    }
+}
+
+impl From<&[u8]> for PeerKey {
+    fn from(input: &[u8]) -> Self {
+        Self(input.to_vec())
     }
 }
 
@@ -74,6 +86,18 @@ impl fmt::Debug for PeerId {
 }
 
 impl fmt::Display for PeerId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(f, "{}", String::from_utf8_lossy(&self.0[..]))
+    }
+}
+
+impl fmt::Debug for PeerKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(f, "PeerKey({})", self)
+    }
+}
+
+impl fmt::Display for PeerKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(f, "{}", String::from_utf8_lossy(&self.0[..]))
     }

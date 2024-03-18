@@ -4,13 +4,13 @@ mod response;
 pub use peer::Peer;
 pub use response::{FailureResponse, Response, SuccessResponse};
 
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::time::Instant;
 
 use tide::prelude::Deserialize;
 
-use crate::schema::{InfoHash, PeerId};
+use crate::schema::{InfoHash, PeerId, PeerKey};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 pub struct Request {
@@ -24,7 +24,7 @@ pub struct Request {
     pub event: Option<Event>,
 
     pub numwant: Option<u64>,
-    pub key: Option<Vec<u8>>,
+    pub key: Option<PeerKey>,
     pub compact: Option<bool>,
     pub supportcrypto: Option<bool>,
     pub no_peer_id: Option<bool>,
@@ -44,11 +44,12 @@ impl Request {
         Peer {
             last_seen: Instant::now(),
             peer_id: Some(self.peer_id),
-            ip: self.ip.unwrap_or(origin_ip),
-            port: self.port,
+            addr: SocketAddr::new(self.ip.unwrap_or(origin_ip), self.port),
             uploaded: Some(self.uploaded),
             downloaded: Some(self.downloaded),
             left: Some(self.left),
+            key: self.key.clone(),
+            supportcrypto: self.supportcrypto,
         }
     }
 }
@@ -66,7 +67,7 @@ impl FromStr for Request {
         let mut left: Option<u64> = None;
         let mut event: Option<Event> = None;
         let mut numwant: Option<u64> = None;
-        let mut key: Option<Vec<u8>> = None;
+        let mut key: Option<PeerKey> = None;
         let mut compact: Option<bool> = None;
         let mut supportcrypto: Option<bool> = None;
         let mut no_peer_id: Option<bool> = None;
@@ -91,7 +92,7 @@ impl FromStr for Request {
                     "numwant" => {
                         numwant = Some(value.parse().map_err(|_| "Invalid \"numwant\" value")?)
                     }
-                    "key" => key = Some(value.as_bytes().to_vec()),
+                    "key" => key = Some(value.as_bytes().into()),
                     "compact" => compact = Some(value == "1"),
                     "supportcrypto" => supportcrypto = Some(value == "1"),
                     "no_peer_id" => no_peer_id = Some(value == "1"),
