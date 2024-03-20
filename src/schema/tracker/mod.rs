@@ -4,6 +4,7 @@ mod response;
 pub use peer::Peer;
 pub use response::{FailureResponse, Response, SuccessResponse};
 
+use std::iter;
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::time::Instant;
@@ -27,6 +28,7 @@ pub struct Request {
     pub key: Option<PeerKey>,
     pub compact: Option<bool>,
     pub supportcrypto: Option<bool>,
+    pub requirecrypto: Option<bool>,
     pub no_peer_id: Option<bool>,
     pub trackerid: Option<Vec<u8>>,
 }
@@ -40,6 +42,33 @@ pub enum Event {
 }
 
 impl Request {
+    pub fn new(
+        info_hash: InfoHash,
+        peer_id: PeerId,
+        port: u16,
+        uploaded: u64,
+        downloaded: u64,
+        left: u64,
+    ) -> Self {
+        Self {
+            info_hash,
+            peer_id,
+            ip: None,
+            port,
+            uploaded,
+            downloaded,
+            left,
+            event: None,
+            numwant: None,
+            key: None,
+            compact: None,
+            supportcrypto: None,
+            requirecrypto: None,
+            no_peer_id: None,
+            trackerid: None,
+        }
+    }
+
     pub fn as_peer(&self, origin_ip: IpAddr) -> Peer {
         Peer {
             last_seen: Instant::now(),
@@ -50,6 +79,114 @@ impl Request {
             left: Some(self.left),
             key: self.key.clone(),
             supportcrypto: self.supportcrypto,
+            requirecrypto: self.requirecrypto,
+        }
+    }
+
+    pub fn as_query_string(&self) -> String {
+        let mut query_string = format!(
+            "info_hash={info_hash}&peer_id={peer_id}&port={port}&uploaded={uploaded}&downloaded={downloaded}&left={left}",
+            info_hash = Self::url_encode(self.info_hash.as_slice()),
+            peer_id = Self::url_encode(self.peer_id.as_slice()),
+            port = self.port,
+            uploaded = self.uploaded,
+            downloaded = self.downloaded,
+            left = self.left,
+        );
+
+        if let Some(ip) = &self.ip {
+            query_string.push_str(&format!("&ip={}", ip));
+        }
+
+        if let Some(event) = &self.event {
+            query_string.push_str("&event=");
+            query_string.push_str(event.as_str());
+        }
+
+        if let Some(numwant) = &self.numwant {
+            query_string.push_str(&format!("&numwant={}", numwant));
+        }
+
+        if let Some(key) = &self.key {
+            query_string.push_str("&key={}");
+            query_string.push_str(&Self::url_encode(key.as_slice()));
+        }
+
+        if let Some(compact) = self.compact {
+            query_string.push_str("&compact=");
+            query_string.push(if compact { '1' } else { '0' });
+        }
+
+        if let Some(supportcrypto) = self.supportcrypto {
+            query_string.push_str("&supportcrypto=");
+            query_string.push(if supportcrypto { '1' } else { '0' });
+        }
+
+        if let Some(requirecrypto) = self.requirecrypto {
+            query_string.push_str("&requirecrypto=");
+            query_string.push(if requirecrypto { '1' } else { '0' });
+        }
+
+        if let Some(no_peer_id) = self.no_peer_id {
+            query_string.push_str("&no_peer_id=");
+            query_string.push(if no_peer_id { '1' } else { '0' });
+        }
+
+        if let Some(trackerid) = &self.trackerid {
+            query_string.push_str("&trackerid=");
+            query_string.push_str(&Self::url_encode(&trackerid[..]));
+        }
+
+        query_string
+    }
+
+    fn url_encode(slice: &[u8]) -> String {
+        slice
+            .into_iter()
+            .flat_map(|&i| {
+                let is_legal = i.is_ascii_alphanumeric();
+                iter::once(if is_legal { i as char } else { '%' }).chain(
+                    Self::hex_chars(i)
+                        .into_iter()
+                        .take(if is_legal { 0 } else { 2 }),
+                )
+            })
+            .collect()
+    }
+
+    fn hex_chars(input: u8) -> [char; 2] {
+        [Self::hex_char(input / 16), Self::hex_char(input % 16)]
+    }
+
+    fn hex_char(input: u8) -> char {
+        match input {
+            0 => '0',
+            1 => '1',
+            2 => '2',
+            3 => '3',
+            4 => '4',
+            5 => '5',
+            6 => '6',
+            7 => '7',
+            8 => '8',
+            9 => '9',
+            10 => 'a',
+            11 => 'b',
+            12 => 'c',
+            13 => 'd',
+            14 => 'e',
+            15 => 'f',
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl Event {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Started => "started",
+            Self::Completed => "completed",
+            Self::Stopped => "stopped",
         }
     }
 }
@@ -70,6 +207,7 @@ impl FromStr for Request {
         let mut key: Option<PeerKey> = None;
         let mut compact: Option<bool> = None;
         let mut supportcrypto: Option<bool> = None;
+        let mut requirecrypto: Option<bool> = None;
         let mut no_peer_id: Option<bool> = None;
         let mut trackerid: Option<Vec<u8>> = None;
 
@@ -95,6 +233,7 @@ impl FromStr for Request {
                     "key" => key = Some(value.as_bytes().into()),
                     "compact" => compact = Some(value == "1"),
                     "supportcrypto" => supportcrypto = Some(value == "1"),
+                    "requirecrypto" => requirecrypto = Some(value == "1"),
                     "no_peer_id" => no_peer_id = Some(value == "1"),
                     "trackerid" => trackerid = Some(value.as_bytes().to_vec()),
                     _ => {}
@@ -124,6 +263,7 @@ impl FromStr for Request {
                 key,
                 compact,
                 supportcrypto,
+                requirecrypto,
                 no_peer_id,
                 trackerid,
             })

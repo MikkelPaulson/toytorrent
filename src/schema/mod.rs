@@ -1,12 +1,13 @@
+pub mod metainfo;
 pub mod peer;
 pub mod tracker;
 
-mod metainfo;
-
 use std::borrow::Cow;
 use std::fmt;
+use std::iter;
 use std::str::FromStr;
 
+use rand::prelude::*;
 use tide::prelude::Deserialize;
 
 pub type Error = Cow<'static, str>;
@@ -24,6 +25,78 @@ pub struct PeerId([u8; 20]);
 pub struct PeerKey(Vec<u8>);
 
 pub struct Bytes(u64);
+
+#[derive(Clone, Debug)]
+pub struct BlockRef([u8; 12]);
+
+impl InfoHash {
+    pub fn as_slice(&self) -> &[u8] {
+        &self.0[..]
+    }
+}
+
+impl PeerId {
+    pub fn create(client_id: &str, version: &str) -> PeerId {
+        let mut bytes = [0u8; 20];
+        let mut rng = rand::thread_rng();
+
+        iter::empty()
+            .chain(iter::once('-' as u8))
+            .chain(client_id.bytes())
+            .chain(version.bytes())
+            .chain(iter::once('-' as u8))
+            .chain(iter::from_fn(|| rng.gen()))
+            .enumerate()
+            .take(20)
+            .for_each(|(i, b)| bytes[i] = b);
+
+        PeerId(bytes)
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        &self.0[..]
+    }
+}
+
+impl PeerKey {
+    pub fn as_slice(&self) -> &[u8] {
+        &self.0[..]
+    }
+}
+
+impl BlockRef {
+    pub fn to_be_bytes(self) -> [u8; 12] {
+        self.0
+    }
+
+    pub fn to_be_bytes_without_len(self) -> [u8; 8] {
+        self.0[0..8].try_into().unwrap()
+    }
+
+    pub fn from_be_bytes(bytes: [u8; 12]) -> BlockRef {
+        BlockRef(bytes)
+    }
+
+    pub fn from_be_bytes_with_len(bytes: [u8; 8], len: u32) -> BlockRef {
+        let mut ref_bytes = [0u8; 12];
+        ref_bytes[0..8].copy_from_slice(&bytes[0..8]);
+        ref_bytes[8..12].copy_from_slice(&len.to_be_bytes());
+
+        BlockRef(ref_bytes)
+    }
+
+    pub fn index(&self) -> u32 {
+        u32::from_be_bytes(self.0[0..4].try_into().unwrap())
+    }
+
+    pub fn begin(&self) -> u32 {
+        u32::from_be_bytes(self.0[4..8].try_into().unwrap())
+    }
+
+    pub fn length(&self) -> u32 {
+        u32::from_be_bytes(self.0[8..12].try_into().unwrap())
+    }
+}
 
 impl FromStr for InfoHash {
     type Err = &'static str;

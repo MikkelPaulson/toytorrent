@@ -19,6 +19,15 @@ pub enum Info {
     },
 }
 
+impl Info {
+    pub fn length(&self) -> u64 {
+        match self {
+            Self::SingleFile { length, .. } => *length,
+            Self::MultiFile { files, .. } => files.iter().map(|f| f.length).sum(),
+        }
+    }
+}
+
 impl TryFrom<BencodeValue<'_>> for Info {
     type Error = Error;
 

@@ -5,9 +5,9 @@ use crate::schema::Error;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct File {
-    length: u64,
-    md5sum: Option<Md5Value>,
-    path: Vec<String>,
+    pub length: u64,
+    pub md5sum: Option<Md5Value>,
+    pub path: Vec<String>,
 }
 
 impl TryFrom<BencodeValue<'_>> for File {

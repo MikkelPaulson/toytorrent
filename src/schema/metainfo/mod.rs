@@ -17,14 +17,14 @@ use sha1::{Digest, Sha1};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MetainfoFile {
-    info: Info,
-    info_hash: InfoHash,
-    announce: String,
-    announce_list: Option<Vec<Vec<String>>>,
-    creation_date: Option<SystemTime>,
-    comment: Option<String>,
-    created_by: Option<String>,
-    encoding: Option<String>,
+    pub info: Info,
+    pub info_hash: InfoHash,
+    pub announce: String,
+    pub announce_list: Option<Vec<Vec<String>>>,
+    pub creation_date: Option<SystemTime>,
+    pub comment: Option<String>,
+    pub created_by: Option<String>,
+    pub encoding: Option<String>,
 }
 
 impl TryFrom<&[u8]> for MetainfoFile {

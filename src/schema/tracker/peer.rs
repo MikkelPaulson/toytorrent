@@ -18,6 +18,7 @@ pub struct Peer {
 
     pub key: Option<PeerKey>,
     pub supportcrypto: Option<bool>,
+    pub requirecrypto: Option<bool>,
 }
 
 impl fmt::Display for Peer {
@@ -123,6 +124,7 @@ impl TryFrom<BencodeValue<'_>> for Peer {
             left: None,
             key: None,
             supportcrypto: None,
+            requirecrypto: None,
         })
     }
 }
@@ -151,6 +153,7 @@ impl TryFrom<&[u8]> for Peer {
             left: None,
             key: None,
             supportcrypto: None,
+            requirecrypto: None,
         })
     }
 }
