@@ -1,5 +1,5 @@
 use crate::bencode::BencodeValue;
-use crate::schema::Error;
+use crate::Error;
 
 use std::fmt;
 

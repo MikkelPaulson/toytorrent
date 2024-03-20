@@ -1,6 +1,6 @@
 use clap::Parser;
 
-use toytorrent::tracker;
+use toytorrent_tracker as tracker;
 
 #[async_std::main]
 async fn main() -> tide::Result<()> {

@@ -9,7 +9,7 @@ pub use md5::Md5Value;
 pub use piece::Piece;
 
 use crate::bencode::BencodeValue;
-use crate::schema::{Error, InfoHash};
+use crate::{Error, InfoHash};
 
 use std::time::SystemTime;
 

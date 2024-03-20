@@ -1,7 +1,7 @@
 use super::Md5Value;
 
 use crate::bencode::BencodeValue;
-use crate::schema::Error;
+use crate::Error;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct File {

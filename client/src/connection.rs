@@ -5,21 +5,21 @@ use std::io::prelude::*;
 use std::io::BufReader;
 use std::net::{SocketAddr, TcpStream};
 
-use crate::schema;
+use toytorrent_common as common;
 
 struct Peer {
-    peer_id: schema::PeerId,
+    peer_id: common::PeerId,
     am_choking: bool,
     am_interested: bool,
     peer_choking: bool,
     peer_interested: bool,
     bitfield: Vec<u8>,
-    am_requesting: Vec<schema::BlockRef>,
-    peer_requesting: Vec<schema::BlockRef>,
+    am_requesting: Vec<common::BlockRef>,
+    peer_requesting: Vec<common::BlockRef>,
 }
 
 impl Peer {
-    pub fn new(peer_id: schema::PeerId) -> Self {
+    pub fn new(peer_id: common::PeerId) -> Self {
         Self {
             peer_id,
             am_choking: true,
@@ -33,7 +33,7 @@ impl Peer {
     }
 }
 
-pub async fn open(mut connection: TcpStream, info_hash: schema::InfoHash, my_peer_id: schema::PeerId) {
+pub async fn open(mut connection: TcpStream, info_hash: common::InfoHash, my_peer_id: common::PeerId) {
     let their_peer_id = handshake(&mut connection, info_hash, my_peer_id, None);
 
     let mut peer = Peer::new(their_peer_id);
@@ -44,7 +44,7 @@ pub async fn open(mut connection: TcpStream, info_hash: schema::InfoHash, my_pee
     .await;
 }
 
-fn handshake(connection: &mut TcpStream, info_hash: schema::InfoHash, my_peer_id: schema::PeerId, expect_peer_id: Option<schema::PeerId>) -> schema::PeerId {
+fn handshake(connection: &mut TcpStream, info_hash: common::InfoHash, my_peer_id: common::PeerId, expect_peer_id: Option<common::PeerId>) -> common::PeerId {
     const PRELUDE: &'static [u8] =  "\u{19}BitTorrent protocol\0\0\0\0\0\0\0\0".as_bytes();
     {
         let mut buf = [0; 28];
@@ -56,7 +56,7 @@ fn handshake(connection: &mut TcpStream, info_hash: schema::InfoHash, my_peer_id
     {
         let mut buf = [0; 20];
         connection.read_exact(&mut buf).unwrap();
-        let other_info_hash: schema::InfoHash = buf.into();
+        let other_info_hash: common::InfoHash = buf.into();
         assert_eq!(info_hash, other_info_hash);
         connection.write(info_hash.as_slice());
     }
@@ -64,7 +64,7 @@ fn handshake(connection: &mut TcpStream, info_hash: schema::InfoHash, my_peer_id
     {
         let mut buf = [0; 20];
         connection.read_exact(&mut buf).unwrap();
-        let their_peer_id: schema::PeerId = buf.into();
+        let their_peer_id: common::PeerId = buf.into();
         if let Some(expect_peer_id) = expect_peer_id {
             assert_eq!(expect_peer_id, their_peer_id);
         }
@@ -73,7 +73,7 @@ fn handshake(connection: &mut TcpStream, info_hash: schema::InfoHash, my_peer_id
     }
 }
 
-fn read<R: std::io::Read>(mut reader: R) -> schema::peer::PeerMessage {
+fn read<R: std::io::Read>(mut reader: R) -> common::peer::PeerMessage {
     let mut buf_reader = BufReader::new(reader);
 
     let len = {
@@ -83,15 +83,15 @@ fn read<R: std::io::Read>(mut reader: R) -> schema::peer::PeerMessage {
     };
 
     match len {
-        ..=schema::peer::PEERMESSAGE_OVERHEAD_MAX_LEN => {
-            let mut buffer = [0u8; schema::peer::PEERMESSAGE_OVERHEAD_MAX_LEN];
+        ..=common::peer::PEERMESSAGE_OVERHEAD_MAX_LEN => {
+            let mut buffer = [0u8; common::peer::PEERMESSAGE_OVERHEAD_MAX_LEN];
             buf_reader.read_exact(&mut buffer[0..len]).unwrap();
-            schema::peer::PeerMessage::try_from(&buffer[0..len]).unwrap()
+            common::peer::PeerMessage::try_from(&buffer[0..len]).unwrap()
         }
-        ..=schema::peer::PEERMESSAGE_PIECE_MAX_LEN => {
-            let mut buffer = [0u8; schema::peer::PEERMESSAGE_PIECE_MAX_LEN];
+        ..=common::peer::PEERMESSAGE_PIECE_MAX_LEN => {
+            let mut buffer = [0u8; common::peer::PEERMESSAGE_PIECE_MAX_LEN];
             buf_reader.read_exact(&mut buffer[0..len]).unwrap();
-            schema::peer::PeerMessage::try_from(&buffer[0..len]).unwrap()
+            common::peer::PeerMessage::try_from(&buffer[0..len]).unwrap()
         }
         _ => panic!("Message too large"),
     }

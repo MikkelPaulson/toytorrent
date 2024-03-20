@@ -5,14 +5,14 @@ use std::time::{Duration, Instant};
 
 use rand::seq::{IteratorRandom, SliceRandom};
 
-use crate::schema;
+use toytorrent_common as common;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Torrents(HashMap<schema::InfoHash, Torrent>);
+pub struct Torrents(HashMap<common::InfoHash, Torrent>);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Torrent {
-    info_hash: schema::InfoHash,
+    info_hash: common::InfoHash,
     pub peers: Peers,
     pub complete: u64,
     pub incomplete: u64,
@@ -21,10 +21,10 @@ pub struct Torrent {
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Peers(HashSet<schema::tracker::Peer>);
+pub struct Peers(HashSet<common::tracker::Peer>);
 
 impl Torrents {
-    pub fn get_or_insert(&mut self, info_hash: schema::InfoHash) -> &mut Torrent {
+    pub fn get_or_insert(&mut self, info_hash: common::InfoHash) -> &mut Torrent {
         self.0
             .entry(info_hash)
             .or_insert_with(|| Torrent::new(info_hash))
@@ -32,7 +32,7 @@ impl Torrents {
 }
 
 impl Torrent {
-    pub fn new(info_hash: schema::InfoHash) -> Self {
+    pub fn new(info_hash: common::InfoHash) -> Self {
         Self {
             info_hash,
             peers: Peers::default(),
@@ -49,11 +49,11 @@ impl Torrent {
 }
 
 impl Peers {
-    pub fn remove(&mut self, peer: &schema::tracker::Peer) {
+    pub fn remove(&mut self, peer: &common::tracker::Peer) {
         self.0.remove(peer);
     }
 
-    pub fn replace(&mut self, peer: schema::tracker::Peer) {
+    pub fn replace(&mut self, peer: common::tracker::Peer) {
         self.0.replace(peer);
     }
 
@@ -68,8 +68,8 @@ impl Peers {
     pub fn get_multiple(
         &self,
         count: usize,
-        exclude: Option<&schema::tracker::Peer>,
-    ) -> Vec<&schema::tracker::Peer> {
+        exclude: Option<&common::tracker::Peer>,
+    ) -> Vec<&common::tracker::Peer> {
         let mut rng = rand::thread_rng();
 
         let expiry = Self::expiry();
@@ -108,7 +108,7 @@ impl Hash for Torrent {
 
 impl fmt::Display for Torrents {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        let mut keys: Vec<&schema::InfoHash> = self.0.keys().collect();
+        let mut keys: Vec<&common::InfoHash> = self.0.keys().collect();
         keys.sort();
 
         for torrent in keys.into_iter().filter_map(|key| self.0.get(key)) {
@@ -141,7 +141,7 @@ impl fmt::Display for Torrent {
 
 impl fmt::Display for Peers {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        let mut peer_vec: Vec<&schema::tracker::Peer> = self.0.iter().collect();
+        let mut peer_vec: Vec<&common::tracker::Peer> = self.0.iter().collect();
         peer_vec.sort();
 
         for (i, peer) in peer_vec.into_iter().enumerate() {

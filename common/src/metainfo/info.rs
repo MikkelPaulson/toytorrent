@@ -1,6 +1,6 @@
 use super::{File, Md5Value, Piece};
 use crate::bencode::BencodeValue;
-use crate::schema::Error;
+use crate::Error;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Info {

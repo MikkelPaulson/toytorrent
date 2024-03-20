@@ -5,16 +5,16 @@
 use std::fs;
 use std::path::Path;
 
-use crate::schema;
+use toytorrent_common as common;
 use super::Args;
 
 pub async fn open(path: &Path, args: Args) -> ! {
-    let metainfo_file: schema::metainfo::MetainfoFile =
+    let metainfo_file: common::metainfo::MetainfoFile =
         fs::read(path).unwrap()[..].try_into().unwrap();
 
-    let peer_id = schema::PeerId::create("tt", "0000");
+    let peer_id = common::PeerId::create("tt", "0000");
 
-    let request = schema::tracker::Request::new(
+    let request = common::tracker::Request::new(
         metainfo_file.info_hash,
         peer_id,
         args.port,
@@ -28,7 +28,7 @@ pub async fn open(path: &Path, args: Args) -> ! {
     todo!();
 }
 
-async fn do_announce(base_url: &str, request: schema::tracker::Request) {
+async fn do_announce(base_url: &str, request: common::tracker::Request) {
     let url = if base_url.contains('?') {
         format!("{base_url}&{}", request.as_query_string())
     } else {

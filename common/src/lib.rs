@@ -1,3 +1,4 @@
+pub mod bencode;
 pub mod metainfo;
 pub mod peer;
 pub mod tracker;
@@ -8,7 +9,7 @@ use std::iter;
 use std::str::FromStr;
 
 use rand::prelude::*;
-use tide::prelude::Deserialize;
+use serde::Deserialize;
 
 pub type Error = Cow<'static, str>;
 

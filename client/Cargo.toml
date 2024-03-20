@@ -1,0 +1,11 @@
+[package]
+name = "toytorrent-client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-std = { version = "1.12.0", features = ["attributes"] }
+clap = { version = "4.4.7", features = ["derive"] }
+rand = "0.8.5"
+
+toytorrent-common = { path = "../common" }

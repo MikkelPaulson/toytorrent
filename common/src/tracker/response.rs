@@ -1,7 +1,7 @@
 use super::Peer;
 
 use crate::bencode::BencodeValue;
-use crate::schema::Error;
+use crate::Error;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Response {

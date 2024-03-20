@@ -9,9 +9,9 @@ use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::time::Instant;
 
-use tide::prelude::Deserialize;
+use serde::Deserialize;
 
-use crate::schema::{InfoHash, PeerId, PeerKey};
+use crate::{InfoHash, PeerId, PeerKey};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 pub struct Request {

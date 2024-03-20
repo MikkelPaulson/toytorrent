@@ -5,7 +5,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::time::Instant;
 
 use crate::bencode::BencodeValue;
-use crate::schema::{Error, PeerId, PeerKey};
+use crate::{Error, PeerId, PeerKey};
 
 #[derive(Clone, Debug, Eq)]
 pub struct Peer {

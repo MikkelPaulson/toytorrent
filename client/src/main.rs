@@ -1,6 +1,6 @@
 use clap::Parser;
 
-use toytorrent::client;
+use toytorrent_client as client;
 
 #[async_std::main]
 async fn main() {

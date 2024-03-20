@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::iter;
 use std::time::{Duration, SystemTime};
 
-use crate::schema::Error;
+use crate::Error;
 
 use nom::bytes::complete as bytes;
 use nom::IResult;
