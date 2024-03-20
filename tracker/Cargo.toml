@@ -7,6 +7,6 @@ edition = "2021"
 async-std = { version = "1.12.0", features = ["attributes"] }
 clap = { version = "4.4.7", features = ["derive"] }
 rand = "0.8.5"
-tide = "0.16.0"
+tide = { version = "0.16.0", default-features = false, features = ["h1-server"] }
 
 toytorrent-common = { path = "../common" }

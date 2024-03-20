@@ -9,11 +9,9 @@ use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::time::Instant;
 
-use serde::Deserialize;
-
 use crate::{InfoHash, PeerId, PeerKey};
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Request {
     pub info_hash: InfoHash,
     pub peer_id: PeerId,
@@ -33,8 +31,7 @@ pub struct Request {
     pub trackerid: Option<Vec<u8>>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "lowercase")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Event {
     Started,
     Completed,

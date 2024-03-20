@@ -9,20 +9,16 @@ use std::iter;
 use std::str::FromStr;
 
 use rand::prelude::*;
-use serde::Deserialize;
 
 pub type Error = Cow<'static, str>;
 
-#[derive(Clone, Copy, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[serde(from = "[u8; 20]")]
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct InfoHash([u8; 20]);
 
-#[derive(Clone, Copy, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[serde(from = "[u8; 20]")]
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct PeerId([u8; 20]);
 
-#[derive(Clone, Deserialize, Eq, Hash, PartialEq)]
-#[serde(from = "&[u8]")]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub struct PeerKey(Vec<u8>);
 
 pub struct Bytes(u64);
