@@ -15,7 +15,7 @@ pub async fn open(path: &Path, args: Args) -> ! {
     let peer_id = common::PeerId::create("tt", "0000");
 
     let request = common::tracker::Request::new(
-        metainfo_file.info_hash,
+        *metainfo_file.info_hash(),
         peer_id,
         args.port,
         0,

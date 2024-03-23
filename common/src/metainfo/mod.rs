@@ -18,13 +18,20 @@ use sha1::{Digest, Sha1};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MetainfoFile {
     pub info: Info,
-    pub info_hash: InfoHash,
     pub announce: String,
     pub announce_list: Option<Vec<Vec<String>>>,
     pub creation_date: Option<SystemTime>,
     pub comment: Option<String>,
     pub created_by: Option<String>,
     pub encoding: Option<String>,
+
+    info_hash: InfoHash,
+}
+
+impl MetainfoFile {
+    pub fn info_hash(&self) -> &InfoHash {
+        &self.info_hash
+    }
 }
 
 impl TryFrom<&[u8]> for MetainfoFile {

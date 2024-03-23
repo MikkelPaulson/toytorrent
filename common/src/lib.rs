@@ -1,7 +1,15 @@
-pub mod bencode;
 pub mod metainfo;
 pub mod peer;
 pub mod tracker;
+
+pub use bencode::BencodeValue;
+pub use debug::DebugBufReader;
+pub use debug::DebugWriter;
+
+pub type Error = Cow<'static, str>;
+
+mod bencode;
+mod debug;
 
 use std::borrow::Cow;
 use std::fmt;
@@ -9,8 +17,6 @@ use std::iter;
 use std::str::FromStr;
 
 use rand::prelude::*;
-
-pub type Error = Cow<'static, str>;
 
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct InfoHash([u8; 20]);
@@ -23,7 +29,7 @@ pub struct PeerKey(Vec<u8>);
 
 pub struct Bytes(u64);
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BlockRef([u8; 12]);
 
 impl InfoHash {

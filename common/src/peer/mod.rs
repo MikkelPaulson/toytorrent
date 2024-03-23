@@ -1,53 +1,37 @@
 use std::io;
 
-use super::{BlockRef, InfoHash, PeerId};
+use super::BlockRef;
 
-#[derive(Clone, Debug)]
+pub const PRELUDE: &'static [u8] = "\u{19}BitTorrent protocol".as_bytes();
+pub const PRELUDE_RESERVED: &'static [u8] = &[0; 8];
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PeerMessage {
-    Handshake {
-        info_hash: InfoHash,
-        peer_id: PeerId,
-    },
     KeepAlive,
     Choke,
     Unchoke,
     Interested,
     NotInterested,
-    Have {
-        index: u32,
-    },
-    Bitfield {
-        bitfield: Vec<u8>,
-    },
-    Request {
-        block: BlockRef,
-    },
-    Piece {
-        block: BlockRef,
-        data: Vec<u8>,
-    },
-    Cancel {
-        block: BlockRef,
-    },
-    Port {
-        port: u16,
-    },
+    Have { index: u32 },
+    Bitfield { bitfield: Vec<u8> },
+    Request { block: BlockRef },
+    Piece { block: BlockRef, data: Vec<u8> },
+    Cancel { block: BlockRef },
+    Port { port: u16 },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ParsedPeerMessage<'a> {
     Complete(PeerMessage, &'a [u8]),
     Incomplete(&'a [u8]),
     Invalid(&'a [u8], &'a [u8]),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PeerMessageError<'a> {
     UnknownId(u8, &'a [u8]),
     BadLength(&'static str, u32, &'a [u8]),
 }
-
-const PROTOCOL_NAME: &'static str = "BitTorrent protocol";
 
 const PEERMESSAGE_CHOKE: u8 = 0;
 const PEERMESSAGE_UNCHOKE: u8 = 1;
@@ -81,13 +65,6 @@ impl PeerMessage {
         let mut l = 0usize;
 
         match self {
-            Self::Handshake { info_hash, peer_id } => {
-                l += w.write(&[PROTOCOL_NAME.len() as u8])?;
-                l += w.write(PROTOCOL_NAME.as_bytes())?;
-                l += w.write(&[0u8; 8])?;
-                l += w.write(info_hash.as_slice())?;
-                l += w.write(peer_id.as_slice())?;
-            }
             Self::KeepAlive => {
                 l += w.write(&PEERMESSAGE_KEEP_ALIVE_LEN.to_be_bytes()[..])?;
             }

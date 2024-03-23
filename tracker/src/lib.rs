@@ -55,7 +55,13 @@ pub async fn run(args: Args) -> tide::Result<()> {
 }
 
 async fn announce_route(req: tide::Request<()>) -> tide::Result {
-    println!("Raw request: {:?}", req);
+    let Some(remote_socket) = req.remote().and_then(|s| s.parse::<SocketAddr>().ok()) else {
+        return into_result(common::tracker::FailureResponse {
+            failure_reason: "Missing remote address".to_string(),
+        });
+    };
+
+    println!("{:21} <# {}", remote_socket, req.url().query().unwrap_or(""));
     let request = match req
         .url()
         .query()
@@ -70,15 +76,19 @@ async fn announce_route(req: tide::Request<()>) -> tide::Result {
         }
     };
 
-    let Some(remote_socket) = req.remote().and_then(|s| s.parse::<SocketAddr>().ok()) else {
-        return into_result(common::tracker::FailureResponse {
-            failure_reason: "Missing remote address".to_string(),
-        });
-    };
+    println!("{:21} <- {:?}", remote_socket, request);
 
-    println!("Request: {:?}", request);
     let response = announce::announce(request, remote_socket.ip()).await;
-    println!("Response: {:?}\n", response);
+    println!("{:21} -> {:?}", remote_socket, response);
+    println!(
+        "{:21} #> {}\n",
+        remote_socket,
+        common::BencodeValue::from(&response)
+            .encode()
+            .into_iter()
+            .map(|i| if i.is_ascii() && !i.is_ascii_control() { i as char } else { '.' })
+            .collect::<String>(),
+    );
 
     println!("{}", torrents());
 
