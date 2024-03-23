@@ -69,16 +69,25 @@ impl Peers {
         &self,
         count: usize,
         exclude: Option<&common::tracker::Peer>,
+        requirecrypto: bool,
     ) -> Vec<&common::tracker::Peer> {
         let mut rng = rand::thread_rng();
 
         let expiry = Self::expiry();
 
-        let mut result = self
-            .0
-            .iter()
-            .filter(|&p| Some(p) != exclude && p.last_seen > expiry)
-            .choose_multiple(&mut rng, count);
+        let mut result = if requirecrypto {
+            self.0
+                .iter()
+                .filter(|&p| {
+                    Some(p) != exclude && p.last_seen > expiry && p.supportcrypto == Some(true)
+                })
+                .choose_multiple(&mut rng, count)
+        } else {
+            self.0
+                .iter()
+                .filter(|&p| Some(p) != exclude && p.last_seen > expiry)
+                .choose_multiple(&mut rng, count)
+        };
 
         result.shuffle(&mut rng);
 

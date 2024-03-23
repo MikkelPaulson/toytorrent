@@ -29,7 +29,7 @@ pub async fn announce(
         .unwrap_or(usize::MAX)
         .clamp(0, 50);
 
-    let peers = torrent.peers.get_multiple(peer_count, Some(&peer)).into_iter().cloned().collect();
+    let peers = torrent.peers.get_multiple(peer_count, Some(&peer), peer.requirecrypto == Some(true)).into_iter().cloned().collect();
 
     common::tracker::SuccessResponse {
         warning_message: None,
