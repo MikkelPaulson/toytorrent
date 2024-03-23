@@ -3,7 +3,9 @@ FROM rust:latest AS intermediate
 WORKDIR /usr/src/toytorrent
 
 COPY Cargo.* ./
-COPY src ./src
+COPY client ./client
+COPY common ./common
+COPY tracker ./tracker
 
 RUN cargo build --release --package toytorrent-client && rm -r ./target/release/build ./target/release/deps
 
