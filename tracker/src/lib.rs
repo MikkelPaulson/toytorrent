@@ -61,7 +61,11 @@ async fn announce_route(req: tide::Request<()>) -> tide::Result {
         });
     };
 
-    println!("{:21} <# {}", remote_socket, req.url().query().unwrap_or(""));
+    println!(
+        "{:21} <# {}",
+        remote_socket,
+        req.url().query().unwrap_or("")
+    );
     let request = match req
         .url()
         .query()
@@ -86,7 +90,11 @@ async fn announce_route(req: tide::Request<()>) -> tide::Result {
         common::BencodeValue::from(&response)
             .encode()
             .into_iter()
-            .map(|i| if i.is_ascii() && !i.is_ascii_control() { i as char } else { '.' })
+            .map(|i| if i.is_ascii() && !i.is_ascii_control() {
+                i as char
+            } else {
+                '.'
+            })
             .collect::<String>(),
     );
 

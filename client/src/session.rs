@@ -5,8 +5,8 @@
 use std::fs;
 use std::path::Path;
 
-use toytorrent_common as common;
 use super::Args;
+use toytorrent_common as common;
 
 pub async fn open(path: &Path, args: Args) -> ! {
     let metainfo_file: common::metainfo::MetainfoFile =

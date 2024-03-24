@@ -13,4 +13,4 @@ FROM debian:latest
 
 COPY --from=intermediate /usr/src/toytorrent/target/release/toytorrent-client /usr/bin/toytorrent-client
 
-CMD /usr/bin/toytorrent-client
+ENTRYPOINT /usr/bin/toytorrent-client

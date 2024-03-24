@@ -95,9 +95,10 @@ impl Connection {
 pub fn listen_for_connections(
     peer_id: common::PeerId,
     listener: TcpListener,
-    sender: mpsc::Sender<io::Result<Incoming>>,
+    sender: mpsc::Sender<super::Incoming>,
 ) {
     loop {
+        // accept() blocks
         let connection = listener.accept();
         let incoming_sender = sender.clone();
 
@@ -116,18 +117,21 @@ pub fn listen_for_connections(
             });
 
             sender
-                .send(Ok(Incoming {
-                    from_socket_addr: addr,
-                    event: IncomingEvent::Opened {
-                        sender: outgoing_sender,
-                        thread,
-                    },
-                }))
+                .send(
+                    Incoming {
+                        from_socket_addr: addr,
+                        event: IncomingEvent::Opened {
+                            sender: outgoing_sender,
+                            thread,
+                        },
+                    }
+                    .into(),
+                )
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
             io::Result::Ok(())
         })() {
-            sender.send(Err(e)).ok();
+            sender.send(e.into()).ok();
         }
     }
 }
@@ -136,20 +140,23 @@ fn accept_connection(
     mut connection: TcpStream,
     addr: SocketAddr,
     peer_id: common::PeerId,
-    sender: mpsc::Sender<io::Result<Incoming>>,
+    sender: mpsc::Sender<super::Incoming>,
     receiver: mpsc::Receiver<Outgoing>,
 ) -> io::Result<()> {
     let (info_hash, their_peer_id) =
         accept_handshake(&mut connection, addr, peer_id, &sender, &receiver)?;
 
     sender
-        .send(Ok(Incoming {
-            from_socket_addr: addr,
-            event: IncomingEvent::Connected {
-                info_hash,
-                peer_id: their_peer_id,
-            },
-        }))
+        .send(
+            Incoming {
+                from_socket_addr: addr,
+                event: IncomingEvent::Connected {
+                    info_hash,
+                    peer_id: their_peer_id,
+                },
+            }
+            .into(),
+        )
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
     let mut buf = [0u8; common::peer::PEERMESSAGE_PIECE_MAX_LEN];
@@ -175,10 +182,13 @@ fn accept_connection(
 
         match common::peer::PeerMessage::try_from(&buf[..len]) {
             Ok(message) => sender
-                .send(Ok(Incoming {
-                    from_socket_addr: addr,
-                    event: IncomingEvent::Message { message },
-                }))
+                .send(
+                    Incoming {
+                        from_socket_addr: addr,
+                        event: IncomingEvent::Message { message },
+                    }
+                    .into(),
+                )
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?,
             Err(e) => eprintln!("{:?}", e),
         }
@@ -189,7 +199,7 @@ fn accept_handshake(
     connection: &mut TcpStream,
     addr: SocketAddr,
     my_peer_id: common::PeerId,
-    sender: &mpsc::Sender<io::Result<Incoming>>,
+    sender: &mpsc::Sender<super::Incoming>,
     receiver: &mpsc::Receiver<Outgoing>,
 ) -> io::Result<(common::InfoHash, common::PeerId)> {
     {
@@ -224,10 +234,13 @@ fn accept_handshake(
         let info_hash: common::InfoHash = buf.into();
 
         sender
-            .send(Ok(Incoming {
-                from_socket_addr: addr,
-                event: IncomingEvent::HandshakeInfoHash { info_hash },
-            }))
+            .send(
+                Incoming {
+                    from_socket_addr: addr,
+                    event: IncomingEvent::HandshakeInfoHash { info_hash },
+                }
+                .into(),
+            )
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
         if receiver.recv() != Ok(Outgoing::Signal(Signal::InfoHashOk)) {

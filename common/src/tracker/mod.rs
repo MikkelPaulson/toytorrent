@@ -14,16 +14,16 @@ use crate::{InfoHash, PeerId, PeerKey};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Request {
     pub info_hash: InfoHash,
-    pub peer_id: PeerId,
-    pub ip: Option<IpAddr>,
-    pub port: u16,
     pub uploaded: u64,
     pub downloaded: u64,
     pub left: u64,
     pub event: Option<Event>,
-
     pub numwant: Option<u64>,
+
+    pub peer_id: PeerId,
     pub key: Option<PeerKey>,
+    pub ip: Option<IpAddr>,
+    pub port: u16,
     pub compact: Option<bool>,
     pub supportcrypto: Option<bool>,
     pub requirecrypto: Option<bool>,

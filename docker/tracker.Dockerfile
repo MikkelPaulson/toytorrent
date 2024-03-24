@@ -13,4 +13,4 @@ FROM debian:latest
 
 COPY --from=intermediate /usr/src/toytorrent/target/release/toytorrent-tracker /usr/bin/toytorrent-tracker
 
-CMD /usr/bin/toytorrent-tracker
+ENTRYPOINT /usr/bin/toytorrent-tracker
