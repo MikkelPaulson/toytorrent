@@ -1,16 +1,16 @@
-mod announce;
-mod connection;
+mod peer;
 mod session;
+mod tracker;
 
 use std::collections::HashMap;
 use std::fs;
 use std::io;
-use std::net::{IpAddr, SocketAddr, TcpListener};
+use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
-use std::sync::mpsc;
-use std::thread;
 
 use clap::Parser;
+use tokio::net::TcpListener;
+use tokio::sync::mpsc;
 
 use toytorrent_common as common;
 
@@ -39,25 +39,25 @@ struct Torrents(HashMap<common::InfoHash, Torrent>);
 #[derive(Debug)]
 struct Torrent {
     metainfo: common::metainfo::MetainfoFile,
-    peers: HashMap<common::PeerId, connection::Peer>,
+    peers: HashMap<common::PeerId, peer::Peer>,
     peer_connections: HashMap<SocketAddr, common::PeerId>,
 }
 
 enum Incoming {
-    Announce(announce::Incoming),
-    Connection(connection::Incoming),
+    Tracker(tracker::Incoming),
+    Peer(peer::Incoming),
     IoError(io::Error),
 }
 
-impl From<announce::Incoming> for Incoming {
-    fn from(input: announce::Incoming) -> Self {
-        Self::Announce(input)
+impl From<tracker::Incoming> for Incoming {
+    fn from(input: tracker::Incoming) -> Self {
+        Self::Tracker(input)
     }
 }
 
-impl From<connection::Incoming> for Incoming {
-    fn from(input: connection::Incoming) -> Self {
-        Self::Connection(input)
+impl From<peer::Incoming> for Incoming {
+    fn from(input: peer::Incoming) -> Self {
+        Self::Peer(input)
     }
 }
 
@@ -81,57 +81,43 @@ pub async fn run(args: Args) {
         },
     );
 
-    let mut connections: HashMap<SocketAddr, connection::Peer> = HashMap::new();
-    let mut pending_connections: HashMap<SocketAddr, connection::Connection> = HashMap::new();
+    let mut connections: HashMap<SocketAddr, peer::Peer> = HashMap::new();
 
     let peer_id = common::PeerId::create("tt", "0000");
-    let (incoming_sender, incoming_receiver) = mpsc::channel::<Incoming>();
+    let (incoming_sender, mut incoming_receiver) = mpsc::channel::<Incoming>(100);
 
     let listener = TcpListener::bind(SocketAddr::new(args.bind, args.port))
+        .await
         .expect("Unable to bind to IP and port");
 
-    thread::spawn(move || connection::listen_for_connections(peer_id, listener, incoming_sender));
+    let mut processes = tokio::task::JoinSet::new();
 
-    while let Ok(message) = incoming_receiver.recv() {
+    processes.spawn(peer::listen(peer_id, listener, incoming_sender));
+
+    while let Some(message) = incoming_receiver.recv().await {
         match message {
-            Incoming::Connection(connection::Incoming {
+            Incoming::Peer(peer::Incoming {
                 from_socket_addr,
                 event,
             }) => match event {
-                connection::IncomingEvent::Opened { sender, thread } => {
-                    pending_connections.insert(
-                        from_socket_addr,
-                        connection::Connection::new(sender, thread),
-                    );
+                peer::IncomingEvent::HandshakeInfoHash {
+                    info_hash,
+                    is_valid_sender,
+                } => {
+                    is_valid_sender
+                        .send(torrents.0.contains_key(&info_hash))
+                        .ok();
                 }
-                connection::IncomingEvent::HandshakeInfoHash { info_hash } => {
-                    if let Some(connection) = pending_connections.get(&from_socket_addr) {
-                        connection
-                            .sender
-                            .send(connection::Outgoing::Signal(
-                                if torrents.0.contains_key(&info_hash) {
-                                    connection::Signal::InfoHashOk
-                                } else {
-                                    connection::Signal::Close
-                                },
-                            ))
-                            .unwrap_or_else(|e| {
-                                eprintln!("{:21} !! Unable to send: {:?}", from_socket_addr, e)
-                            });
-                    } else {
-                        eprintln!("{:21} !! Unexpected {:?}", from_socket_addr, event);
-                    }
+                peer::IncomingEvent::Connected { peer } => {
+                    torrents.0.entry(peer.info_hash).and_modify(|torrent| {
+                        torrent.peer_connections.insert(from_socket_addr, peer_id);
+                    });
+                    connections.insert(peer.connection.addr, peer);
                 }
-                connection::IncomingEvent::Connected { info_hash, peer_id } => {
-                    if let Some(connection) = pending_connections.remove(&from_socket_addr) {
-                        connections
-                            .insert(from_socket_addr, connection::Peer::new(peer_id, connection));
-                    }
-                }
-                connection::IncomingEvent::Message { message } => todo!(),
-                connection::IncomingEvent::Closed => todo!(),
+                peer::IncomingEvent::Message { message } => todo!(),
+                peer::IncomingEvent::Closed => todo!(),
             },
-            Incoming::Announce(announce::Incoming { info_hash, event }) => (),
+            Incoming::Tracker(tracker::Incoming { info_hash, event }) => (),
             Incoming::IoError(e) => println!("{:?}", e),
         }
     }

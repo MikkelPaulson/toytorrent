@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::iter;
 use std::net::IpAddr;
-use tokio::sync::mpsc;
 use std::time::Duration;
+use tokio::sync::mpsc;
 
 use toytorrent_common as common;
 

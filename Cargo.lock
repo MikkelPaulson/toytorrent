@@ -2268,6 +2268,7 @@ dependencies = [
  "nom",
  "rand 0.8.5",
  "sha1 0.10.6",
+ "tokio",
 ]
 
 [[package]]

@@ -1,5 +1,7 @@
 use std::io;
 
+use tokio::io::AsyncWriteExt;
+
 use super::BlockRef;
 
 pub const PRELUDE: &'static [u8] = "\u{19}BitTorrent protocol".as_bytes();
@@ -61,61 +63,71 @@ pub const PEERMESSAGE_PIECE_MAX_LEN: usize = (PEERMESSAGE_PIECE_MIN_LEN + PIECE_
 pub const PEERMESSAGE_OVERHEAD_MAX_LEN: usize = PEERMESSAGE_REQUEST_LEN as usize;
 
 impl PeerMessage {
-    pub fn write_to<W: io::Write>(self, w: &mut W) -> io::Result<usize> {
+    pub async fn write_to<W: AsyncWriteExt + Unpin>(self, w: &mut W) -> io::Result<usize> {
         let mut l = 0usize;
 
         match self {
             Self::KeepAlive => {
-                l += w.write(&PEERMESSAGE_KEEP_ALIVE_LEN.to_be_bytes()[..])?;
+                l += w
+                    .write(&PEERMESSAGE_KEEP_ALIVE_LEN.to_be_bytes()[..])
+                    .await?;
             }
             Self::Choke => {
-                l += w.write(&PEERMESSAGE_CHOKE_LEN.to_be_bytes()[..])?;
-                l += w.write(&[PEERMESSAGE_CHOKE][..])?;
+                l += w.write(&PEERMESSAGE_CHOKE_LEN.to_be_bytes()[..]).await?;
+                l += w.write(&[PEERMESSAGE_CHOKE][..]).await?;
             }
             Self::Unchoke => {
-                l += w.write(&PEERMESSAGE_UNCHOKE_LEN.to_be_bytes()[..])?;
-                l += w.write(&[PEERMESSAGE_UNCHOKE][..])?;
+                l += w.write(&PEERMESSAGE_UNCHOKE_LEN.to_be_bytes()[..]).await?;
+                l += w.write(&[PEERMESSAGE_UNCHOKE][..]).await?;
             }
             Self::Interested => {
-                l += w.write(&PEERMESSAGE_INTERESTED_LEN.to_be_bytes()[..])?;
-                l += w.write(&[PEERMESSAGE_INTERESTED][..])?;
+                l += w
+                    .write(&PEERMESSAGE_INTERESTED_LEN.to_be_bytes()[..])
+                    .await?;
+                l += w.write(&[PEERMESSAGE_INTERESTED][..]).await?;
             }
             Self::NotInterested => {
-                l += w.write(&PEERMESSAGE_NOT_INTERESTED_LEN.to_be_bytes()[..])?;
-                l += w.write(&[PEERMESSAGE_NOT_INTERESTED][..])?;
+                l += w
+                    .write(&PEERMESSAGE_NOT_INTERESTED_LEN.to_be_bytes()[..])
+                    .await?;
+                l += w.write(&[PEERMESSAGE_NOT_INTERESTED][..]).await?;
             }
             Self::Have { index } => {
-                l += w.write(&PEERMESSAGE_HAVE_LEN.to_be_bytes()[..])?;
-                l += w.write(&[PEERMESSAGE_HAVE][..])?;
-                l += w.write(&index.to_be_bytes()[..])?;
+                l += w.write(&PEERMESSAGE_HAVE_LEN.to_be_bytes()[..]).await?;
+                l += w.write(&[PEERMESSAGE_HAVE][..]).await?;
+                l += w.write(&index.to_be_bytes()[..]).await?;
             }
             Self::Bitfield { bitfield } => {
-                l += w.write(
-                    &(PEERMESSAGE_BITFIELD_MIN_LEN + bitfield.len() as u32).to_be_bytes()[..],
-                )?;
-                l += w.write(&[PEERMESSAGE_BITFIELD][..])?;
-                l += w.write(&bitfield[..])?;
+                l += w
+                    .write(
+                        &(PEERMESSAGE_BITFIELD_MIN_LEN + bitfield.len() as u32).to_be_bytes()[..],
+                    )
+                    .await?;
+                l += w.write(&[PEERMESSAGE_BITFIELD][..]).await?;
+                l += w.write(&bitfield[..]).await?;
             }
             Self::Request { block } => {
-                l += w.write(&PEERMESSAGE_REQUEST_LEN.to_be_bytes()[..])?;
-                l += w.write(&[PEERMESSAGE_REQUEST][..])?;
-                l += w.write(&block.to_be_bytes()[..])?;
+                l += w.write(&PEERMESSAGE_REQUEST_LEN.to_be_bytes()[..]).await?;
+                l += w.write(&[PEERMESSAGE_REQUEST][..]).await?;
+                l += w.write(&block.to_be_bytes()[..]).await?;
             }
             Self::Piece { block, data } => {
-                l += w.write(&(PEERMESSAGE_PIECE_MIN_LEN + data.len() as u32).to_be_bytes()[..])?;
-                l += w.write(&[PEERMESSAGE_PIECE][..])?;
-                l += w.write(&block.to_be_bytes_without_len()[..])?;
-                l += w.write(&data[..])?;
+                l += w
+                    .write(&(PEERMESSAGE_PIECE_MIN_LEN + data.len() as u32).to_be_bytes()[..])
+                    .await?;
+                l += w.write(&[PEERMESSAGE_PIECE][..]).await?;
+                l += w.write(&block.to_be_bytes_without_len()[..]).await?;
+                l += w.write(&data[..]).await?;
             }
             Self::Cancel { block } => {
-                l += w.write(&PEERMESSAGE_CANCEL_LEN.to_be_bytes()[..])?;
-                l += w.write(&[PEERMESSAGE_CANCEL][..])?;
-                l += w.write(&block.to_be_bytes()[..])?;
+                l += w.write(&PEERMESSAGE_CANCEL_LEN.to_be_bytes()[..]).await?;
+                l += w.write(&[PEERMESSAGE_CANCEL][..]).await?;
+                l += w.write(&block.to_be_bytes()[..]).await?;
             }
             Self::Port { port } => {
-                l += w.write(&PEERMESSAGE_PORT_LEN.to_be_bytes()[..])?;
-                l += w.write(&[PEERMESSAGE_PORT][..])?;
-                l += w.write(&port.to_be_bytes()[..])?;
+                l += w.write(&PEERMESSAGE_PORT_LEN.to_be_bytes()[..]).await?;
+                l += w.write(&[PEERMESSAGE_PORT][..]).await?;
+                l += w.write(&port.to_be_bytes()[..]).await?;
             }
         }
 
